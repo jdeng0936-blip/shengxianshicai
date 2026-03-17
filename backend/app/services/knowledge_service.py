@@ -39,7 +39,7 @@ class KnowledgeService:
             tenant_id=tenant_id, created_by=user_id,
         )
         self.session.add(case)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(case)
         return case
 
@@ -52,7 +52,7 @@ class KnowledgeService:
             return None
         for k, v in data.model_dump(exclude_none=True).items():
             setattr(case, k, v)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(case)
         return case
 
@@ -64,7 +64,7 @@ class KnowledgeService:
         if not case:
             return False
         await self.session.delete(case)
-        await self.session.commit()
+        await self.session.flush()
         return True
 
     # ========== DAT-03 文档模板 ==========
@@ -82,7 +82,7 @@ class KnowledgeService:
             **data.model_dump(), tenant_id=tenant_id, created_by=user_id,
         )
         self.session.add(tpl)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(tpl)
         return tpl
 
@@ -94,7 +94,7 @@ class KnowledgeService:
         if not tpl:
             return False
         await self.session.delete(tpl)
-        await self.session.commit()
+        await self.session.flush()
         return True
 
     # ========== DAT-04 章节片段 ==========
@@ -112,7 +112,7 @@ class KnowledgeService:
             **data.model_dump(), tenant_id=tenant_id, created_by=user_id,
         )
         self.session.add(snippet)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(snippet)
         return snippet
 
@@ -125,7 +125,7 @@ class KnowledgeService:
             return None
         for k, v in data.model_dump(exclude_none=True).items():
             setattr(snippet, k, v)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(snippet)
         return snippet
 
@@ -137,5 +137,5 @@ class KnowledgeService:
         if not snippet:
             return False
         await self.session.delete(snippet)
-        await self.session.commit()
+        await self.session.flush()
         return True
