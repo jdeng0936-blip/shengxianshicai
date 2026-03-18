@@ -144,6 +144,25 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "query_standard_table",
+            "description": "结构化参数查表 — 根据围岩级别、瓦斯等级、掘进方式等条件，精确查询标准参数推荐表（支护参数表、通风标准表、设备配置表）。当用户询问具体的推荐参数值、标准配置时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "table_name": {"type": "string", "enum": ["支护参数", "通风标准", "设备配置"], "description": "要查询的参数表"},
+                    "rock_class": {"type": "string", "enum": ["I","II","III","IV","V"], "description": "围岩级别（查支护参数表时必填）"},
+                    "section_form": {"type": "string", "enum": ["矩形","拱形","梯形"], "description": "断面形式"},
+                    "gas_level": {"type": "string", "enum": ["低瓦斯","高瓦斯","突出"], "description": "瓦斯等级（查通风标准表时必填）"},
+                    "tunnel_type": {"type": "string", "enum": ["煤巷","岩巷"], "description": "巷道类型"},
+                    "dig_method": {"type": "string", "enum": ["钻爆法","综掘"], "description": "掘进方式（查设备配置表时必填）"},
+                },
+                "required": ["table_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_recommendations",
             "description": "规程建议 — 根据工程条件给出安全技术措施建议。当用户询问安全措施、注意事项、操作规程时调用。",
             "parameters": {
@@ -197,6 +216,18 @@ class AIRouter:
         elif name == "get_recommendations":
             return {"status": "ok", "context": args}
 
+        elif name == "query_standard_table":
+            from app.services.table_query_service import TableQueryService
+            result = TableQueryService.query(
+                table_name=args.get("table_name", ""),
+                rock_class=args.get("rock_class", "III"),
+                section_form=args.get("section_form", "拱形"),
+                gas_level=args.get("gas_level", "低瓦斯"),
+                tunnel_type=args.get("tunnel_type", "煤巷"),
+                dig_method=args.get("dig_method", "钻爆法"),
+            )
+            return result if result else {"error": "未找到匹配的参数表记录", "query": args}
+
         else:
             return {"error": f"未知工具: {name}"}
 
@@ -208,29 +239,41 @@ class AIRouter:
         return self._execute_tool(name, args)
 
     async def _search_standards(self, args: dict) -> dict:
-        """标准库语义检索 — 调用 EmbeddingService"""
+        """标准库融合检索 — L1 语义 + L2 查表 + L3 re-rank"""
         if not self.session:
             return {"error": "数据库连接不可用", "results": []}
 
         try:
-            from app.services.embedding_service import EmbeddingService
-            svc = EmbeddingService(self.session)
-            results = await svc.search_similar(
+            from app.services.retriever import HybridRetriever
+            retriever = HybridRetriever(self.session)
+
+            # 从 args 中提取上下文参数（如果有）
+            context = {}
+            for key in ["rock_class", "section_form", "gas_level", "tunnel_type", "dig_method"]:
+                if args.get(key):
+                    context[key] = args[key]
+
+            result = await retriever.retrieve(
                 query=args.get("query", ""),
+                context=context,
                 top_k=args.get("top_k", 5),
             )
-            if not results:
+
+            if not result["merged"]:
                 return {
                     "status": "no_results",
-                    "message": "未找到相关条款，知识库可能尚未向量化或无匹配内容",
+                    "message": "未找到相关条款或参数表记录",
                 }
             return {
                 "status": "ok",
-                "total": len(results),
-                "clauses": results,
+                "summary": result["summary"],
+                "total": len(result["merged"]),
+                "semantic_count": len(result["semantic_results"]),
+                "table_count": len(result["table_results"]),
+                "results": result["merged"],
             }
         except Exception as e:
-            return {"error": f"检索失败: {str(e)}", "results": []}
+            return {"error": f"融合检索失败: {str(e)}", "results": []}
 
     async def chat(self, user_message: str, history: Optional[list] = None) -> str:
         """非流式对话（完整响应）"""
