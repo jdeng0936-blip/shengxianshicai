@@ -29,6 +29,7 @@ from app.api.v1.calc import router as calc_router
 from app.api.v1.doc import router as doc_router
 from app.api.v1.ai import router as ai_router
 from app.api.v1.knowledge import router as knowledge_router
+from app.api.v1.drawing import router as drawing_router
 
 
 async def _init_db():
@@ -113,7 +114,8 @@ app.include_router(calc_router, prefix="/api/v1")
 app.include_router(doc_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
 app.include_router(knowledge_router, prefix="/api/v1")
+app.include_router(drawing_router, prefix="/api/v1")
 
 # TODO: 后续逐步注册
-# app.include_router(drawing_router, prefix="/api/v1")
 # app.include_router(system_router, prefix="/api/v1")
+
