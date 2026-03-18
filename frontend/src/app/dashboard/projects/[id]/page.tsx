@@ -4,29 +4,70 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   FileText,
   Download,
   Zap,
   CheckCircle2,
-  XCircle,
   AlertTriangle,
   Loader2,
   ChevronDown,
   ChevronRight,
   ArrowLeft,
+  Pencil,
+  Save,
+  X,
 } from "lucide-react";
 import api from "@/lib/api";
 import Link from "next/link";
 
-/** 参数中文映射 */
-const PARAM_LABELS: Record<string, string> = {
-  rock_class: "围岩级别", coal_thickness: "煤层厚度", coal_dip: "煤层倾角",
-  gas_level: "瓦斯等级", section_form: "断面形式",
-  section_width: "断面宽度 (m)", section_height: "断面高度 (m)",
-  excavation_length: "掘进长度 (m)", dig_method: "掘进方式",
-  equipment: "掘进设备", transport: "运输方式", hydro_type: "水文类型",
+/* ============ 参数分组配置 ============ */
+type FieldDef = {
+  key: string; label: string;
+  type: "text" | "number" | "select"; options?: string[];
 };
+
+const GEOLOGY_FIELDS: FieldDef[] = [
+  { key: "rock_class", label: "围岩级别", type: "select", options: ["I", "II", "III", "IV", "V"] },
+  { key: "coal_thickness", label: "煤层厚度 (m)", type: "number" },
+  { key: "coal_dip_angle", label: "煤层倾角 (°)", type: "number" },
+  { key: "gas_level", label: "瓦斯等级", type: "select", options: ["低瓦斯", "高瓦斯", "突出"] },
+  { key: "hydro_type", label: "水文地质类型", type: "select", options: ["简单", "中等", "复杂", "复杂水文地质"] },
+  { key: "geo_structure", label: "地质构造特征", type: "text" },
+  { key: "spontaneous_combustion", label: "自燃倾向性", type: "select", options: ["不易自燃", "自燃", "容易自燃"] },
+];
+
+const ROADWAY_FIELDS: FieldDef[] = [
+  { key: "roadway_type", label: "巷道类型", type: "select", options: ["进风巷", "回风巷", "运输巷", "联络巷", "石门"] },
+  { key: "excavation_type", label: "掘进类型", type: "select", options: ["煤巷", "岩巷", "半煤岩巷"] },
+  { key: "section_form", label: "断面形式", type: "select", options: ["矩形", "拱形", "梯形"] },
+  { key: "section_width", label: "断面宽度 (m)", type: "number" },
+  { key: "section_height", label: "断面高度 (m)", type: "number" },
+  { key: "excavation_length", label: "掘进长度 (m)", type: "number" },
+  { key: "service_years", label: "服务年限 (年)", type: "number" },
+];
+
+const EQUIP_FIELDS: FieldDef[] = [
+  { key: "dig_method", label: "掘进方式", type: "select", options: ["综掘", "炮掘", "手工掘进"] },
+  { key: "dig_equipment", label: "掘进设备型号", type: "text" },
+  { key: "transport_method", label: "运输方式", type: "text" },
+];
+
+const ALL_FIELDS = [...GEOLOGY_FIELDS, ...ROADWAY_FIELDS, ...EQUIP_FIELDS];
+
+/** 参数中文标签映射（用于只读展示） */
+const PARAM_LABELS: Record<string, string> = Object.fromEntries(
+  ALL_FIELDS.map(f => [f.key, f.label])
+);
 
 const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
   template: { label: "模板", color: "bg-slate-200 text-slate-600" },
@@ -48,6 +89,11 @@ export default function ProjectDetailPage() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [expandedChapter, setExpandedChapter] = useState<string | null>(null);
 
+  // 参数编辑状态
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<Record<string, any>>({});
+  const [saving, setSaving] = useState(false);
+
   // 加载项目数据
   const fetchProject = useCallback(async () => {
     setLoading(true);
@@ -58,7 +104,6 @@ export default function ProjectDetailPage() {
       ]);
       if (projRes.status === "fulfilled") setProject(projRes.value.data?.data);
       if (paramsRes.status === "fulfilled") setProjectParams(paramsRes.value.data?.data);
-      // 加载已生成文档列表
       try {
         const docsRes = await api.get(`/projects/${projectId}/documents`);
         setDocuments(docsRes.data?.data || []);
@@ -70,13 +115,46 @@ export default function ProjectDetailPage() {
 
   useEffect(() => { fetchProject(); }, [fetchProject]);
 
+  // 进入编辑模式
+  const startEditing = () => {
+    const form: Record<string, any> = {};
+    ALL_FIELDS.forEach(f => {
+      form[f.key] = projectParams?.[f.key] ?? "";
+    });
+    setEditForm(form);
+    setEditing(true);
+  };
+
+  // 保存参数
+  const handleSaveParams = async () => {
+    setSaving(true);
+    try {
+      // 数值类型转换，空字符串转 null
+      const payload: Record<string, any> = {};
+      ALL_FIELDS.forEach(f => {
+        const val = editForm[f.key];
+        if (val === "" || val === null || val === undefined) {
+          payload[f.key] = null;
+        } else if (f.type === "number") {
+          payload[f.key] = Number(val);
+        } else {
+          payload[f.key] = val;
+        }
+      });
+      const res = await api.put(`/projects/${projectId}/params`, payload);
+      setProjectParams(res.data?.data);
+      setEditing(false);
+    } catch (e: any) {
+      alert("保存失败: " + (e.response?.data?.detail || e.message));
+    } finally { setSaving(false); }
+  };
+
   // 一键生成
   const handleGenerate = async () => {
     setGenerating(true);
     try {
       const res = await api.post(`/projects/${projectId}/generate`);
       setGenerateResult(res.data?.data);
-      // 刷新文档列表
       const docsRes = await api.get(`/projects/${projectId}/documents`);
       setDocuments(docsRes.data?.data || []);
     } catch (e: any) {
@@ -103,7 +181,46 @@ export default function ProjectDetailPage() {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
   }
 
-  // 参数展平显示
+  // 渲染字段输入控件
+  const renderField = (f: FieldDef) => {
+    const val = editForm[f.key] ?? "";
+    if (f.type === "select" && f.options) {
+      return (
+        <Select value={String(val)} onValueChange={(v) => setEditForm(prev => ({ ...prev, [f.key]: v }))}>
+          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="请选择" /></SelectTrigger>
+          <SelectContent>
+            {f.options.map(opt => (
+              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+    return (
+      <Input
+        type={f.type === "number" ? "number" : "text"}
+        className="h-8 text-sm"
+        placeholder={f.label}
+        value={val}
+        onChange={(e) => setEditForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+      />
+    );
+  };
+
+  // 渲染字段组
+  const renderFieldGroup = (title: string, fields: FieldDef[]) => (
+    <div className="space-y-2.5">
+      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{title}</h4>
+      {fields.map(f => (
+        <div key={f.key} className="space-y-1">
+          <Label className="text-xs text-slate-500">{f.label}</Label>
+          {renderField(f)}
+        </div>
+      ))}
+    </div>
+  );
+
+  // 只读参数展示
   const paramEntries: [string, string][] = projectParams
     ? Object.entries(projectParams)
         .filter(([k]) => !["id", "project_id", "created_at", "updated_at", "created_by", "tenant_id"].includes(k))
@@ -129,7 +246,7 @@ export default function ProjectDetailPage() {
           </div>
         </div>
         <div className="flex gap-3">
-          <Button className="gap-2" onClick={handleGenerate} disabled={generating}>
+          <Button className="gap-2" onClick={handleGenerate} disabled={generating || editing}>
             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
             {generating ? "生成中..." : "一键生成规程"}
           </Button>
@@ -137,17 +254,53 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="grid grid-cols-12 gap-6">
-        {/* 左侧：项目参数 */}
+        {/* 左侧：项目参数（编辑/只读切换） */}
         <Card className="col-span-4">
-          <CardHeader><CardTitle className="text-sm">项目参数</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {paramEntries.length > 0 ? paramEntries.map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">{k}</span>
-                <span className="font-medium">{v}</span>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle className="text-sm">项目参数</CardTitle>
+            {!editing ? (
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={startEditing}>
+                <Pencil className="h-3 w-3" />编辑
+              </Button>
+            ) : (
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => setEditing(false)} disabled={saving}>
+                  <X className="h-3 w-3" />取消
+                </Button>
+                <Button size="sm" className="h-7 gap-1 text-xs" onClick={handleSaveParams} disabled={saving}>
+                  {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                  保存
+                </Button>
               </div>
-            )) : (
-              <p className="py-4 text-center text-sm text-slate-400">暂未填写参数</p>
+            )}
+          </CardHeader>
+          <CardContent>
+            {editing ? (
+              /* 编辑模式：分组表单 */
+              <div className="space-y-5 max-h-[600px] overflow-y-auto pr-1">
+                {renderFieldGroup("🪨 地质条件", GEOLOGY_FIELDS)}
+                <hr className="border-dashed" />
+                {renderFieldGroup("🚇 巷道参数", ROADWAY_FIELDS)}
+                <hr className="border-dashed" />
+                {renderFieldGroup("⚙️ 设备配置", EQUIP_FIELDS)}
+              </div>
+            ) : (
+              /* 只读模式 */
+              <div className="space-y-2">
+                {paramEntries.length > 0 ? paramEntries.map(([k, v]) => (
+                  <div key={k} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500">{k}</span>
+                    <span className="font-medium">{v}</span>
+                  </div>
+                )) : (
+                  <div className="py-6 text-center">
+                    <p className="text-sm text-slate-400 mb-3">暂未填写参数</p>
+                    <Button variant="outline" size="sm" className="gap-1" onClick={startEditing}>
+                      <Pencil className="h-3.5 w-3.5" />填写参数
+                    </Button>
+                  </div>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>
