@@ -282,6 +282,7 @@ class AIRouter:
                 "summary": result["summary"],
                 "total": len(result["merged"]),
                 "semantic_count": len(result["semantic_results"]),
+                "snippet_count": len(result.get("snippet_results", [])),
                 "table_count": len(result["table_results"]),
                 "results": result["merged"],
             }
