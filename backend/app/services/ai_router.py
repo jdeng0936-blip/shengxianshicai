@@ -27,6 +27,7 @@ from app.schemas.cycle import CycleCalcInput
 from app.services.calc_engine import SupportCalcEngine
 from app.services.vent_engine import VentCalcEngine
 from app.services.cycle_engine import CycleCalcEngine
+from app.services.industry_vocab import IndustryVocabService
 
 # ========== LangFuse 可观测性（可选） ==========
 _langfuse = None
@@ -183,18 +184,29 @@ TOOLS = [
 class AIRouter:
     """AI 智能路由引擎"""
 
-    def __init__(self, session: Optional[AsyncSession] = None):
+    def __init__(self, session: Optional[AsyncSession] = None, tenant_id: int = 0, industry_type: str = "coal_excavation"):
         # 优先使用 OpenAI，兼容 Gemini（通过 OpenAI 兼容 API）
         api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY", "")
         base_url = os.getenv("OPENAI_BASE_URL")
         self.model = os.getenv("AI_MODEL", "gpt-4o-mini")
         self.session = session  # 数据库 session（用于向量检索）
+        self.tenant_id = tenant_id
+        self.industry_type = industry_type
 
         client_kwargs = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
 
         self.client = AsyncOpenAI(**client_kwargs)
+
+    def _build_system_prompt(self) -> str:
+        """构建 System Prompt — 基础角色 + 行业词库动态注入"""
+        prompt = SYSTEM_PROMPT
+        # 铁律：行业词库注入
+        injection = IndustryVocabService.build_prompt_injection(self.industry_type)
+        if injection:
+            prompt += injection
+        return prompt
 
     def _execute_tool(self, name: str, args: dict) -> dict:
         """执行工具调用（同步计算引擎）"""
@@ -245,7 +257,7 @@ class AIRouter:
 
         try:
             from app.services.retriever import HybridRetriever
-            retriever = HybridRetriever(self.session)
+            retriever = HybridRetriever(self.session, self.tenant_id)
 
             # 从 args 中提取上下文参数（如果有）
             context = {}
@@ -277,7 +289,7 @@ class AIRouter:
 
     async def chat(self, user_message: str, history: Optional[list] = None) -> str:
         """非流式对话（完整响应）"""
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": self._build_system_prompt()}]
         if history:
             messages.extend(history)
         messages.append({"role": "user", "content": user_message})
@@ -345,7 +357,7 @@ class AIRouter:
         self, user_message: str, history: Optional[list] = None
     ) -> AsyncGenerator[str, None]:
         """SSE 流式对话"""
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": self._build_system_prompt()}]
         if history:
             messages.extend(history)
         messages.append({"role": "user", "content": user_message})

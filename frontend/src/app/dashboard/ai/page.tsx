@@ -48,7 +48,28 @@ export default function AIChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [industryType, setIndustryType] = useState("coal_excavation");
+  const [industries, setIndustries] = useState<{key: string; label: string}[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // 加载行业列表
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    fetch(`${API_BASE}/ai/industries`, {
+      headers: { Authorization: `Bearer ${token || ""}` },
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.data) setIndustries(d.data);
+      })
+      .catch(() => {
+        // 接口不可用时使用默认
+        setIndustries([
+          { key: "coal_excavation", label: "煤矿掘进工程" },
+          { key: "municipal_road", label: "市政道路工程" },
+        ]);
+      });
+  }, []);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -91,6 +112,7 @@ export default function AIChatPage() {
           message: text,
           history,
           stream: true,
+          industry_type: industryType,
         }),
       });
 
@@ -209,6 +231,18 @@ export default function AIChatPage() {
             <RotateCcw className="h-3.5 w-3.5" /> 清空
           </Button>
         )}
+        {/* 行业选择下拉框 */}
+        <select
+          value={industryType}
+          onChange={(e) => setIndustryType(e.target.value)}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-sm transition hover:border-blue-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+        >
+          {industries.map((ind) => (
+            <option key={ind.key} value={ind.key}>
+              {ind.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* 消息区 */}

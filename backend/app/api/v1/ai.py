@@ -15,8 +15,15 @@ from app.core.deps import get_current_user_payload
 from app.schemas.common import ApiResponse
 from app.schemas.ai import ChatRequest, ChatResponse
 from app.services.ai_router import AIRouter
+from app.services.industry_vocab import IndustryVocabService
 
 router = APIRouter(prefix="/ai", tags=["AI 智能路由"])
+
+
+@router.get("/industries", response_model=ApiResponse)
+async def list_industries():
+    """获取可用行业词库列表（前端下拉框数据源）"""
+    return ApiResponse(data=IndustryVocabService.list_industries())
 
 
 @router.post("/chat")
@@ -31,8 +38,10 @@ async def ai_chat(
     - stream=true → SSE 流式输出（默认）
     - stream=false → 完整 JSON 响应
     """
+    # 从 JWT payload 提取 tenant_id 强制传入路与系统隔离
+    tenant_id = int(payload.get("tenant_id", 0)) if payload else 0
     # 每次请求创建新的 AIRouter 实例，注入 DB session
-    ai = AIRouter(session=session)
+    ai = AIRouter(session=session, tenant_id=tenant_id, industry_type=body.industry_type)
 
     # 构建历史消息
     history = [{"role": m.role, "content": m.content} for m in body.history]

@@ -21,6 +21,7 @@ class ChatRequest(BaseModel):
     project_id: Optional[int] = Field(None, description="关联项目ID（可选）")
     history: list[ChatMessage] = Field(default_factory=list, description="历史消息")
     stream: bool = Field(default=True, description="是否 SSE 流式输出")
+    industry_type: str = Field(default="coal_excavation", description="行业类型（决定词库注入）")
 
 
 class ToolCallResult(BaseModel):
