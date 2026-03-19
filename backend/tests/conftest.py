@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import (
 from app.main import app
 from app.core.config import settings
 from app.core.database import get_async_session
+from app.models.base import Base
 
 
 # 每个测试函数创建一次，确保 engine 绑定在当前事件循环
@@ -30,6 +31,11 @@ async def async_client():
         pool_size=5,
         max_overflow=5,
     )
+
+    # 自动同步所有表结构（含新模块），确保测试 DB 与代码保持一致
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     test_session_factory = async_sessionmaker(
         test_engine,
         class_=AsyncSession,

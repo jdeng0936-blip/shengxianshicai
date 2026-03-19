@@ -19,6 +19,7 @@ from app.models.document import *  # noqa: F401,F403
 from app.models.mine import *  # noqa: F401,F403
 from app.models.drawing import *  # noqa: F401,F403
 from app.models.audit_log import *  # noqa: F401,F403
+from app.models.feedback import *  # noqa: F401,F403
 from app.models.dict_item import *  # noqa: F401,F403
 
 from app.api.v1.health import router as health_router
@@ -33,6 +34,7 @@ from app.api.v1.ai import router as ai_router
 from app.api.v1.knowledge import router as knowledge_router
 from app.api.v1.drawing import router as drawing_router
 from app.api.v1.system import router as system_router
+from app.api.v1.feedback import router as feedback_router
 
 
 async def _init_db():
@@ -119,4 +121,5 @@ app.include_router(ai_router, prefix="/api/v1")
 app.include_router(knowledge_router, prefix="/api/v1")
 app.include_router(drawing_router, prefix="/api/v1")
 app.include_router(system_router, prefix="/api/v1")
+app.include_router(feedback_router, prefix="/api/v1")
 

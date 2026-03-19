@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import Link from "next/link";
+import ChapterFeedback from "@/components/business/chapter-feedback";
 
 /* ============ 参数分组配置 ============ */
 type FieldDef = {
@@ -368,6 +369,12 @@ export default function ProjectDetailPage() {
                                 </div>
                               )}
                               <pre className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed font-sans">{ch.content}</pre>
+                              <ChapterFeedback
+                                projectId={projectId}
+                                chapterNo={chKey}
+                                chapterTitle={ch.title}
+                                content={ch.content || ""}
+                              />
                             </div>
                           )}
                         </div>
