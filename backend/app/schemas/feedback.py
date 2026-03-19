@@ -15,7 +15,7 @@ class DiffFeedbackRequest(BaseModel):
     chapter_no: str = Field(..., max_length=20, description="章节编号")
     chapter_title: str = Field(..., max_length=200, description="章节标题")
     original_text: str = Field(..., min_length=1, description="AI 原始生成文本")
-    modified_text: str = Field(..., min_length=1, description="用户修正后文本")
+    modified_text: Optional[str] = Field(None, description="用户修正后文本（reject时可空）")
     action: Literal["accept", "edit", "reject"] = Field(..., description="用户动作")
     comment: Optional[str] = Field(None, description="备注")
 

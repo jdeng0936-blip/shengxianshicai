@@ -26,8 +26,8 @@ class FeedbackLog(AuditMixin, Base):
     original_text: Mapped[str] = mapped_column(
         Text, nullable=False, comment="AI 原始生成文本"
     )
-    modified_text: Mapped[str] = mapped_column(
-        Text, nullable=False, comment="用户修改后文本（accept 时与原文相同）"
+    modified_text: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="用户修改后文本（reject 时可空）"
     )
     action: Mapped[str] = mapped_column(
         String(20), nullable=False, comment="用户动作: accept / edit / reject"
