@@ -85,6 +85,9 @@ class DocGenerator:
             project, params_dict, match_result, calc_result, vent_result
         )
 
+        # 4.5 智能深度润色（AI赋能）
+        chapters = await self._ai_polish_content(chapters, params_dict)
+
         # 5. 生成 Word
         file_path = self._render_docx(project, chapters, calc_result, vent_result)
 
@@ -247,6 +250,48 @@ class DocGenerator:
             source="template",
         ))
 
+        return chapters
+
+    async def _ai_polish_content(self, chapters: list[ChapterContent], params: dict) -> list[ChapterContent]:
+        """AI 深度润色长尾章节内容 (例如：安全技术措施)"""
+        import os
+        from openai import AsyncOpenAI
+        
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY", "")
+        base_url = os.getenv("OPENAI_BASE_URL")
+        model = os.getenv("AI_MODEL", "gpt-4o-mini")
+        
+        if not api_key:
+            return chapters  # 降级：无大模型配置时原样返回
+            
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        client = AsyncOpenAI(**client_kwargs)
+        
+        for ch in chapters:
+            if "安全技术措施" in ch.title or "灾害预防" in ch.title:
+                prompt = (
+                    f"请作为顶尖煤矿安全专家，根据以下参数对作业规程的【{ch.title}】章节进行扩充、润色，"
+                    f"使其更符合现场实际，具备可操作性，避免生硬的模板拼接感。\n"
+                    f"地质条件与参数: {params}\n"
+                    f"原始内容框架:\n{ch.content}\n\n"
+                    "要求：\n"
+                    "1. 直接输出润色后的篇章正式内容，不要包含任何前言后语和分析推理过程。\n"
+                    "2. 分条列出，层级清晰，重点突出。"
+                )
+                try:
+                    resp = await client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                    polished = resp.choices[0].message.content
+                    if polished:
+                        ch.content = polished
+                        ch.source = "ai_polished"
+                except Exception as e:
+                    print(f"⚠️ AI 润色失败: {e}")
+                    
         return chapters
 
     # ========== Word 渲染 ==========

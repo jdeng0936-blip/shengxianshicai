@@ -21,8 +21,9 @@ from app.services.table_query_service import TableQueryService
 class HybridRetriever:
     """三层融合检索器"""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, tenant_id: int):
         self.session = session
+        self.tenant_id = tenant_id
         self.embedding_svc = EmbeddingService(session)
         self.table_svc = TableQueryService()
 
@@ -52,34 +53,13 @@ class HybridRetriever:
 
         # ===== L1: 语义检索 =====
         semantic_results = await self.embedding_svc.search_similar(
-            query=query, top_k=top_k
+            query=query, tenant_id=self.tenant_id, top_k=top_k
         )
 
         # ===== L2: 结构化查表 =====
         table_results = []
-        # 根据上下文自动判断查哪些表
-        if context.get("rock_class"):
-            r = self.table_svc.query_support(
-                rock_class=context["rock_class"],
-                section_form=context.get("section_form", "拱形"),
-            )
-            if r:
-                table_results.append(r)
-
-        if context.get("gas_level"):
-            r = self.table_svc.query_ventilation(
-                gas_level=context["gas_level"],
-                tunnel_type=context.get("tunnel_type", "煤巷"),
-            )
-            if r:
-                table_results.append(r)
-
-        if context.get("dig_method"):
-            r = self.table_svc.query_equipment(
-                dig_method=context["dig_method"],
-            )
-            if r:
-                table_results.append(r)
+        # 架构升级优化规则 #4：查表意图完全转交由 LLM Tool Calling (ai_router) 判断处理
+        # 移除此处的 if-else 硬编码查表逻辑，使 Retriver 更加纯粹聚焦语义检索
 
         # ===== L3: 融合 + Re-rank =====
         merged = self._merge_and_rank(semantic_results, table_results)

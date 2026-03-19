@@ -61,14 +61,16 @@ class EmbeddingService:
     async def search_similar(
         self,
         query: str,
+        tenant_id: int,
         top_k: int = 5,
         threshold: float = 0.3,
     ) -> list[dict]:
         """
-        语义相似检索 — 基于 pgvector 余弦距离
-
+        语义相似检索 — 基于 pgvector 余弦距离，多租户强隔离
+        
         Args:
             query: 查询文本
+            tenant_id: 租户ID（0 代表通用基础库）
             top_k: 返回前 K 条
             threshold: 余弦距离阈值（越小越相似）
 
@@ -82,7 +84,7 @@ class EmbeddingService:
 
         emb_str = "[" + ",".join(str(v) for v in query_emb) + "]"
 
-        # pgvector 余弦距离检索（<=> 运算符）
+        # pgvector 余弦距离检索（<=> 运算符），强制租户隔离
         sql = text("""
             SELECT
                 c.id AS clause_id,
@@ -92,7 +94,8 @@ class EmbeddingService:
                 (c.embedding <=> :query_emb::vector) AS distance
             FROM std_clause c
             JOIN std_document d ON c.document_id = d.id
-            WHERE c.embedding IS NOT NULL
+            WHERE c.embedding IS NOT NULL 
+              AND (d.tenant_id = :tenant_id OR d.tenant_id = 0)
             ORDER BY c.embedding <=> :query_emb::vector
             LIMIT :top_k
         """)
@@ -100,6 +103,7 @@ class EmbeddingService:
         result = await self.session.execute(sql, {
             "query_emb": emb_str,
             "top_k": top_k,
+            "tenant_id": tenant_id,
         })
         rows = result.fetchall()
 
