@@ -253,9 +253,17 @@ class DocGenerator:
         return chapters
 
     async def _ai_polish_content(self, chapters: list[ChapterContent], params: dict) -> list[ChapterContent]:
-        """AI 深度润色长尾章节内容 (例如：安全技术措施)"""
+        """
+        AI 深度润色长尾章节 — RAG 增强版
+
+        流程:
+          1. 对每个须润色的章节，用章节标题检索标准库 + 知识库
+          2. 将检索到的规程片段注入 LLM System Prompt
+          3. LLM 基于客户真实规程生成更贴合实际的内容
+        """
         from app.core.config import settings
         from openai import AsyncOpenAI
+        from app.services.embedding_service import EmbeddingService
 
         api_key = settings.OPENAI_API_KEY or settings.GEMINI_API_KEY
         base_url = settings.OPENAI_BASE_URL or None
@@ -268,17 +276,55 @@ class DocGenerator:
         if base_url:
             client_kwargs["base_url"] = base_url
         client = AsyncOpenAI(**client_kwargs)
-        
+
+        # RAG 检索服务
+        emb_svc = EmbeddingService(self.session)
+
         for ch in chapters:
-            if "安全技术措施" in ch.title or "灾害预防" in ch.title:
+            if "安全技术措施" in ch.title or "灾害预防" in ch.title or "支护" in ch.title:
+                # ===== RAG 检索：标准库 + 知识库 =====
+                rag_context_parts = []
+
+                # L1a: 标准库条款
+                std_results = await emb_svc.search_similar(
+                    query=ch.title, tenant_id=1, top_k=3, threshold=0.4
+                )
+                if std_results:
+                    rag_context_parts.append("【标准库参考条款】")
+                    for r in std_results:
+                        rag_context_parts.append(
+                            f"- [{r['doc_title']}] {r['clause_no']}: {r['content'][:300]}"
+                        )
+
+                # L1b: 知识库（客户规程片段）
+                snippet_results = await emb_svc.search_snippets(
+                    query=ch.title, tenant_id=1, top_k=5, threshold=0.4
+                )
+                if snippet_results:
+                    rag_context_parts.append("\n【客户规程参考内容】")
+                    for r in snippet_results:
+                        rag_context_parts.append(
+                            f"- [{r['chapter_name']}]: {r['content'][:300]}"
+                        )
+
+                rag_context = "\n".join(rag_context_parts)
+                rag_note = ""
+                if rag_context:
+                    rag_note = (
+                        f"\n\n以下是从客户已有规程和国家标准中检索到的相关内容，"
+                        f"请务必参考并融入你的输出中，确保与客户实际情况一致：\n{rag_context}\n"
+                    )
+
                 prompt = (
                     f"请作为顶尖煤矿安全专家，根据以下参数对作业规程的【{ch.title}】章节进行扩充、润色，"
                     f"使其更符合现场实际，具备可操作性，避免生硬的模板拼接感。\n"
                     f"地质条件与参数: {params}\n"
-                    f"原始内容框架:\n{ch.content}\n\n"
+                    f"原始内容框架:\n{ch.content}"
+                    f"{rag_note}\n\n"
                     "要求：\n"
                     "1. 直接输出润色后的篇章正式内容，不要包含任何前言后语和分析推理过程。\n"
-                    "2. 分条列出，层级清晰，重点突出。"
+                    "2. 分条列出，层级清晰，重点突出。\n"
+                    "3. 如引用了参考资料中的具体数值标准，请在文中自然融入。"
                 )
                 try:
                     resp = await client.chat.completions.create(
@@ -291,7 +337,7 @@ class DocGenerator:
                         ch.source = "ai_polished"
                 except Exception as e:
                     print(f"⚠️ AI 润色失败: {e}")
-                    
+
         return chapters
 
     # ========== Word 渲染 ==========
