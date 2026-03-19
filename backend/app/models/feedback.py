@@ -3,7 +3,7 @@
 
 采纳/修改/拒绝 差分记录，作为 SFT/RLHF 数据飞轮的核心正负样本积累。
 """
-from sqlalchemy import String, Integer, Text, ForeignKey, Index
+from sqlalchemy import String, Integer, Float, Text, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, AuditMixin
@@ -34,6 +34,9 @@ class FeedbackLog(AuditMixin, Base):
     )
     comment: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="用户备注"
+    )
+    diff_ratio: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="编辑差异度 0~1（仅 edit 动作有值）"
     )
 
     __table_args__ = (

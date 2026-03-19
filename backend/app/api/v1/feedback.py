@@ -19,6 +19,7 @@ from app.schemas.feedback import (
     FeedbackStats,
 )
 from app.models.feedback import FeedbackLog
+from app.services.diff_sink import trigger_sink_if_needed
 
 router = APIRouter(prefix="/feedback", tags=["系统反馈飞轮"])
 
@@ -34,9 +35,23 @@ async def submit_feedback(
 
     前端用户对 AI 生成文档内容的修正（Diff 反馈），
     作为构建数据飞轮的关键正负样本积累（SFT/RLHF）。
+
+    当 action=edit 且差异度 > 10% 时，异步下沉修订文本到知识库。
     """
     tenant_id = int(payload.get("tenant_id", 0)) if payload else 0
     user_id = int(payload.get("sub", 0)) if payload else 0
+
+    # 计算差异度（仅 edit 动作有意义）
+    diff_ratio = None
+    if body.action == "edit":
+        diff_ratio = trigger_sink_if_needed(
+            original_text=body.original_text,
+            revised_text=body.modified_text,
+            chapter_no=body.chapter_no,
+            chapter_title=body.chapter_title,
+            project_id=body.project_id,
+            tenant_id=tenant_id,
+        )
 
     record = FeedbackLog(
         project_id=body.project_id,
@@ -46,6 +61,7 @@ async def submit_feedback(
         modified_text=body.modified_text,
         action=body.action,
         comment=body.comment,
+        diff_ratio=diff_ratio,
         tenant_id=tenant_id,
         created_by=user_id,
     )
@@ -54,7 +70,7 @@ async def submit_feedback(
     await session.refresh(record)
 
     return ApiResponse(
-        data={"id": record.id, "status": "recorded"}
+        data={"id": record.id, "status": "recorded", "diff_ratio": diff_ratio}
     )
 
 
