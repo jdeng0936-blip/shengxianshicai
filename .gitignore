@@ -27,7 +27,7 @@ venv/
 Thumbs.db
 
 # 生成文件（可再生成）
-# storage/outputs/*.docx
+storage/outputs/*.docx
 # generated/*.docx
 
 # 数据库
@@ -36,7 +36,7 @@ Thumbs.db
 
 # 日志
 *.log
-# backend/storage/outputs/
+backend/storage/outputs/
 
 # 数据库备份
 backups/
