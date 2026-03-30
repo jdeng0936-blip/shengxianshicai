@@ -2,77 +2,62 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, BookOpen, Settings2, Calculator, Loader2, ArrowUpRight, Zap } from "lucide-react";
+import {
+  FileText,
+  Building2,
+  ShieldCheck,
+  Loader2,
+  ArrowUpRight,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  Sparkles,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api";
 import Link from "next/link";
-import FeedbackStatsPanel from "@/components/business/feedback-stats";
 
-interface StatsData {
-  projects: number;
-  standards: number;
-  rules: number;
-  documents: number;
-}
-
-interface RecentProject {
+interface BidProject {
   id: number;
-  face_name: string;
-  mine_name: string;
+  project_name: string;
+  tender_org?: string;
+  customer_type?: string;
   status: string;
-  created_at: string;
-  params?: any;
+  budget_amount?: number;
+  deadline?: string;
+  created_at?: string;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-slate-100 text-slate-600",
-  in_progress: "bg-blue-100 text-blue-700",
-  completed: "bg-green-100 text-green-700",
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  draft: { label: "草稿", color: "bg-slate-100 text-slate-600" },
+  parsing: { label: "解析中", color: "bg-blue-100 text-blue-700" },
+  parsed: { label: "已解析", color: "bg-cyan-100 text-cyan-700" },
+  generating: { label: "生成中", color: "bg-blue-100 text-blue-700" },
+  generated: { label: "已生成", color: "bg-green-100 text-green-700" },
+  reviewing: { label: "审查中", color: "bg-yellow-100 text-yellow-700" },
+  completed: { label: "已完成", color: "bg-green-100 text-green-700" },
+  submitted: { label: "已投标", color: "bg-purple-100 text-purple-700" },
+  won: { label: "已中标", color: "bg-emerald-100 text-emerald-700" },
+  lost: { label: "未中标", color: "bg-red-100 text-red-600" },
+  failed: { label: "失败", color: "bg-red-100 text-red-600" },
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "草稿",
-  in_progress: "进行中",
-  completed: "已完成",
+const CUSTOMER_LABELS: Record<string, string> = {
+  school: "学校", hospital: "医院", government: "政府",
+  enterprise: "企业", canteen: "团餐",
 };
 
-/** Dashboard 首页 — 工作台概览（对接真实 API） */
 export default function DashboardPage() {
-  const [stats, setStats] = useState<StatsData>({ projects: 0, standards: 0, rules: 0, documents: 0 });
-  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [projects, setProjects] = useState<BidProject[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 并行请求各模块数据
-        const [projRes, stdRes, rulesRes] = await Promise.allSettled([
-          api.get("/projects", { params: { page: 1, page_size: 5 } }),
-          api.get("/standards", { params: { page: 1, page_size: 1 } }),
-          api.get("/rules/groups"),
-        ]);
-
-        const projData = projRes.status === "fulfilled" ? projRes.value.data?.data : null;
-        const stdData = stdRes.status === "fulfilled" ? stdRes.value.data?.data : null;
-        const rulesData = rulesRes.status === "fulfilled" ? rulesRes.value.data?.data : null;
-
-        // 规则统计：累加每个规则组的 rule_count
-        let totalRules = 0;
-        if (Array.isArray(rulesData)) {
-          totalRules = rulesData.reduce((sum: number, g: any) => sum + (g.rule_count || 0), 0);
-        }
-
-        setStats({
-          projects: projData?.total ?? (Array.isArray(projData) ? projData.length : 0),
-          standards: stdData?.total ?? (Array.isArray(stdData) ? stdData.length : 0),
-          rules: totalRules,
-          documents: 0, // 文档数后续可通过遍历项目统计
-        });
-
-        // 最近项目
-        const items = projData?.items || (Array.isArray(projData) ? projData : []);
-        setRecentProjects(items.slice(0, 5));
+        const res = await api.get("/bid-projects");
+        setProjects(res.data?.data || []);
       } catch {
-        // 使用默认值
+        // ignore
       } finally {
         setLoading(false);
       }
@@ -80,20 +65,41 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
+  const total = projects.length;
+  const inProgress = projects.filter((p) =>
+    ["parsing", "parsed", "generating", "generated", "reviewing"].includes(p.status)
+  ).length;
+  const completed = projects.filter((p) =>
+    ["completed", "submitted", "won"].includes(p.status)
+  ).length;
+  const totalBudget = projects.reduce((sum, p) => sum + (p.budget_amount || 0), 0);
+
+  const recentProjects = [...projects]
+    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+    .slice(0, 6);
+
   const cards = [
-    { title: "规程项目", value: stats.projects, icon: FileText, desc: "已创建", href: "/dashboard/projects", color: "text-blue-600" },
-    { title: "标准规范", value: stats.standards, icon: BookOpen, desc: "已录入", href: "/dashboard/standards", color: "text-emerald-600" },
-    { title: "编制规则", value: stats.rules, icon: Settings2, desc: "条规则", href: "/dashboard/rules", color: "text-purple-600" },
-    { title: "计算校验", value: "6 种", icon: Calculator, desc: "支护/通风/循环/锚索/合规/冲突", href: "/dashboard/calc", color: "text-orange-600" },
+    { title: "投标项目", value: total, icon: FileText, desc: "总项目数", color: "text-blue-600", bg: "bg-blue-50" },
+    { title: "进行中", value: inProgress, icon: Clock, desc: "解析/生成/审查", color: "text-amber-600", bg: "bg-amber-50" },
+    { title: "已完成", value: completed, icon: CheckCircle2, desc: "完成/投标/中标", color: "text-green-600", bg: "bg-green-50" },
+    {
+      title: "总预算",
+      value: totalBudget > 0 ? `${(totalBudget / 10000).toFixed(0)}万` : "—",
+      icon: Building2,
+      desc: "累计预算金额",
+      color: "text-purple-600",
+      bg: "bg-purple-50",
+    },
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-800 dark:text-white">工作台</h2>
-        <Link href="/dashboard/projects/new">
+        <Link href="/dashboard/bid-projects/new">
           <span className="flex items-center gap-1 text-sm text-blue-600 hover:underline cursor-pointer">
-            新建项目 <ArrowUpRight className="h-3.5 w-3.5" />
+            <Sparkles className="h-3.5 w-3.5" />
+            新建投标项目 <ArrowUpRight className="h-3.5 w-3.5" />
           </span>
         </Link>
       </div>
@@ -101,65 +107,110 @@ export default function DashboardPage() {
       {/* 统计卡片 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {cards.map((s) => (
-          <Link key={s.title} href={s.href}>
-            <Card className="cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-slate-500">{s.title}</CardTitle>
+          <Card key={s.title}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-slate-500">{s.title}</CardTitle>
+              <div className={`rounded-lg p-2 ${s.bg}`}>
                 <s.icon className={`h-4 w-4 ${s.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">
-                  {loading ? <Loader2 className="h-6 w-6 animate-spin text-slate-300" /> : s.value}
-                </div>
-                <p className="text-xs text-slate-500">{s.desc}</p>
-              </CardContent>
-            </Card>
-          </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">
+                {loading ? <Loader2 className="h-6 w-6 animate-spin text-slate-300" /> : s.value}
+              </div>
+              <p className="text-xs text-slate-500">{s.desc}</p>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
-      {/* 反馈飞轮统计 */}
-      <FeedbackStatsPanel />
+      {/* 快捷入口 */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Link href="/dashboard/bid-projects">
+          <Card className="cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-blue-100">
+            <CardContent className="flex items-center gap-4 pt-6">
+              <div className="rounded-lg bg-blue-50 p-3">
+                <FileText className="h-6 w-6 text-blue-600" />
+              </div>
+              <div>
+                <p className="font-medium">投标项目管理</p>
+                <p className="text-xs text-slate-400">上传招标文件 / AI 解析 / 生成章节</p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/dashboard/ai">
+          <Card className="cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-purple-100">
+            <CardContent className="flex items-center gap-4 pt-6">
+              <div className="rounded-lg bg-purple-50 p-3">
+                <Sparkles className="h-6 w-6 text-purple-600" />
+              </div>
+              <div>
+                <p className="font-medium">AI 智能助手</p>
+                <p className="text-xs text-slate-400">资质核验 / 报价分析 / 法规检索</p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/dashboard/knowledge">
+          <Card className="cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-emerald-100">
+            <CardContent className="flex items-center gap-4 pt-6">
+              <div className="rounded-lg bg-emerald-50 p-3">
+                <ShieldCheck className="h-6 w-6 text-emerald-600" />
+              </div>
+              <div>
+                <p className="font-medium">知识库检索</p>
+                <p className="text-xs text-slate-400">食品安全法规 / 冷链标准 / 中标案例</p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
 
       {/* 最近项目 */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">最近项目</CardTitle>
-          <Link href="/dashboard/projects">
+          <CardTitle className="text-base">最近投标项目</CardTitle>
+          <Link href="/dashboard/bid-projects">
             <span className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer">查看全部 →</span>
           </Link>
         </CardHeader>
         <CardContent>
-          {recentProjects.length > 0 ? (
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
+            </div>
+          ) : recentProjects.length > 0 ? (
             <div className="space-y-2.5">
               {recentProjects.map((p) => {
-                const hasParams = p.params && Object.values(p.params).some((v: any) => v !== null && v !== "");
+                const statusInfo = STATUS_MAP[p.status] || { label: p.status, color: "bg-slate-100 text-slate-500" };
                 return (
-                  <Link key={p.id} href={`/dashboard/projects/${p.id}`}>
+                  <Link key={p.id} href={`/dashboard/bid-projects/${p.id}`}>
                     <div className="flex items-center justify-between rounded-lg border p-3.5 transition-all hover:bg-slate-50 hover:shadow-sm">
                       <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50">
                           <FileText className="h-4 w-4 text-blue-600" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium">{p.face_name}</p>
-                          <p className="text-xs text-slate-400">{p.mine_name || "未关联矿井"}</p>
+                          <p className="text-sm font-medium">{p.project_name}</p>
+                          <p className="text-xs text-slate-400">
+                            {[
+                              p.tender_org,
+                              p.customer_type && CUSTOMER_LABELS[p.customer_type],
+                              p.budget_amount && `${(p.budget_amount / 10000).toFixed(0)}万`,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || "—"}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {hasParams ? (
-                          <span className="flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-600">
-                            <Zap className="h-3 w-3" />可生成
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-600">
-                            待填参数
-                          </span>
+                        {p.deadline && (
+                          <span className="text-xs text-slate-400">截止: {p.deadline}</span>
                         )}
-                        <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_COLORS[p.status] || "bg-slate-100 text-slate-500"}`}>
-                          {STATUS_LABELS[p.status] || p.status}
-                        </span>
-                        <span className="text-xs text-slate-400">{p.created_at?.slice(0, 10)}</span>
+                        <Badge className={`text-xs ${statusInfo.color}`}>
+                          {statusInfo.label}
+                        </Badge>
                       </div>
                     </div>
                   </Link>
@@ -167,8 +218,8 @@ export default function DashboardPage() {
               })}
             </div>
           ) : (
-            <p className="py-4 text-center text-sm text-slate-400">
-              暂无项目，点击右上角&quot;新建项目&quot;开始创建。
+            <p className="py-8 text-center text-sm text-slate-400">
+              暂无投标项目，点击右上角"新建投标项目"开始
             </p>
           )}
         </CardContent>

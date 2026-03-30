@@ -165,7 +165,59 @@ async def seed():
 
         await session.commit()
         print(f"种子数据导入完成: {total_docs} 份文档, {total_clauses} 条条款")
-        print("提示: 请运行向量嵌入脚本为条款生成 embedding 向量")
+
+        # ===== 第二步: 生成向量嵌入 =====
+        print("\n开始生成向量嵌入...")
+        await generate_embeddings(session)
+
+
+async def generate_embeddings(session):
+    """为所有缺少 embedding 的 StdClause 生成向量"""
+    from app.models.standard import StdClause
+    from app.services.embedding_service import EmbeddingService
+
+    emb_svc = EmbeddingService(session)
+
+    # 查询所有没有 embedding 的条款
+    result = await session.execute(
+        select(StdClause).where(StdClause.embedding.is_(None))
+    )
+    clauses = list(result.scalars().all())
+
+    if not clauses:
+        print("所有条款已有向量嵌入，无需生成")
+        return
+
+    print(f"待生成向量: {len(clauses)} 条条款")
+
+    # 批量生成（每批 10 条）
+    batch_size = 10
+    success = 0
+    failed = 0
+
+    for i in range(0, len(clauses), batch_size):
+        batch = clauses[i:i + batch_size]
+        texts = [
+            f"{c.title or ''} {c.content or ''}"
+            for c in batch
+        ]
+
+        embeddings = await emb_svc.embed_batch(texts)
+
+        for clause, emb in zip(batch, embeddings):
+            if emb is not None:
+                clause.embedding = emb
+                success += 1
+            else:
+                failed += 1
+
+        await session.commit()
+        print(f"  进度: {min(i + batch_size, len(clauses))}/{len(clauses)}")
+
+    print(f"向量嵌入完成: {success} 成功, {failed} 失败")
+
+    if failed > 0:
+        print("提示: 部分条款向量生成失败，请检查 GEMINI_API_KEY 是否配置")
 
 
 if __name__ == "__main__":
