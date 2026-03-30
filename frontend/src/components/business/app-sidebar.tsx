@@ -16,22 +16,21 @@ import {
   FileOutput,
   FileSearch,
   Wrench,
+  ClipboardList,
+  Building2,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 /** 侧边栏导航项配置 */
 const NAV_ITEMS = [
   { href: "/dashboard", label: "工作台", icon: LayoutDashboard },
-  { href: "/dashboard/projects", label: "规程项目", icon: FileText },
+  { href: "/dashboard/bid-projects", label: "投标项目", icon: ClipboardList },
   { href: "/dashboard/documents", label: "文档中心", icon: FileOutput },
   { href: "/dashboard/standards", label: "标准库", icon: BookOpen },
-  { href: "/dashboard/rules", label: "规则管理", icon: Settings2 },
   { href: "/dashboard/knowledge", label: "知识库", icon: Library },
-  { href: "/dashboard/calc", label: "计算校验", icon: Calculator },
   { href: "/dashboard/compliance", label: "合规审查", icon: FileSearch },
-  { href: "/dashboard/equipment", label: "设备材料", icon: Wrench },
   { href: "/dashboard/ai", label: "AI 助手", icon: Bot },
-  { href: "/dashboard/drawings", label: "图纸管理", icon: ImageIcon },
   { href: "/dashboard/system", label: "系统管理", icon: Database },
 ];
 
@@ -44,7 +43,7 @@ export default function AppSidebar() {
       {/* Logo 区域 */}
       <div className="flex h-14 items-center border-b px-4">
         <span className="text-lg font-bold text-slate-800 dark:text-white">
-          ⛏️ 规程智能平台
+          鲜标智投
         </span>
       </div>
 

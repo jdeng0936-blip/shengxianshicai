@@ -1,8 +1,10 @@
 """
-投标项目 API 路由 — BidProject + TenderRequirement + BidChapter CRUD
+投标项目 API 路由 — BidProject + TenderRequirement + BidChapter CRUD + 招标文件上传解析 + AI 生成
 """
+import json
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -14,6 +16,8 @@ from app.schemas.bid_project import (
     BidChapterCreate, BidChapterUpdate, BidChapterOut,
 )
 from app.services.bid_project_service import BidProjectService
+from app.services.tender_parser import TenderParseService
+from app.services.bid_generation_service import BidGenerationService
 
 router = APIRouter(prefix="/bid-projects", tags=["投标项目"])
 
@@ -86,6 +90,96 @@ async def delete_project(
     if not ok:
         raise HTTPException(status_code=404, detail="投标项目不存在")
     return ApiResponse(data={"deleted": True})
+
+
+# ========== 招标文件上传与解析 ==========
+
+@router.post("/{project_id}/upload-tender", response_model=ApiResponse)
+async def upload_tender(
+    project_id: int,
+    file: UploadFile = File(..., description="招标文件（PDF/DOCX/DOC）"),
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """上传招标文件"""
+    user_id = int(payload.get("sub", 0))
+
+    # 校验项目存在
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="投标项目不存在")
+
+    try:
+        parser = TenderParseService(session)
+        file_path, filename = await parser.save_tender_file(project_id, tenant_id, file)
+
+        # 更新项目的招标文件路径
+        project.tender_doc_path = file_path
+        await session.commit()
+
+        return ApiResponse(data={
+            "file_path": file_path,
+            "filename": filename,
+            "message": "招标文件上传成功，可调用解析接口进行 AI 解析",
+        })
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{project_id}/parse-tender", response_model=ApiResponse)
+async def parse_tender(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """AI 解析招标文件 — 提取结构化要求（废标项/资格要求/评分标准等）"""
+    user_id = int(payload.get("sub", 0))
+
+    # 校验项目存在且有招标文件
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="投标项目不存在")
+    if not project.tender_doc_path:
+        raise HTTPException(status_code=400, detail="请先上传招标文件")
+
+    try:
+        # 更新状态为解析中
+        project.status = "parsing"
+        await session.commit()
+
+        parser = TenderParseService(session)
+
+        # 1. 提取文本
+        text = await parser.extract_text(
+            project.tender_doc_path,
+            project.tender_doc_path.split("/")[-1],
+        )
+
+        # 2. LLM 结构化解析
+        result = await parser.parse_with_llm(project_id, tenant_id, text, user_id)
+
+        return ApiResponse(data={
+            "status": "parsed",
+            "requirements_count": sum(
+                len(result.get(k, []))
+                for k in ["disqualification_items", "qualification_requirements",
+                          "technical_requirements", "scoring_criteria",
+                          "commercial_requirements"]
+            ),
+            "project_name": result.get("project_name"),
+            "buyer_name": result.get("buyer_name"),
+            "customer_type": result.get("customer_type"),
+            "budget_amount": result.get("budget_amount"),
+        })
+    except Exception as e:
+        # 解析失败，更新状态
+        project.status = "failed"
+        await session.commit()
+        raise HTTPException(status_code=500, detail=f"招标文件解析失败: {str(e)}")
 
 
 @router.patch("/{project_id}/status", response_model=ApiResponse[BidProjectOut])
@@ -239,3 +333,68 @@ async def delete_chapter(
     if not ok:
         raise HTTPException(status_code=404, detail="投标章节不存在")
     return ApiResponse(data={"deleted": True})
+
+
+# ========== AI 章节生成 ==========
+
+@router.post("/{project_id}/init-chapters", response_model=ApiResponse[list[BidChapterOut]])
+async def init_chapters(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """根据模板初始化投标文件章节结构"""
+    user_id = int(payload.get("sub", 0))
+    gen_svc = BidGenerationService(session)
+    try:
+        chapters = await gen_svc.init_chapters(project_id, tenant_id, user_id)
+        return ApiResponse(data=[BidChapterOut.model_validate(ch) for ch in chapters])
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{project_id}/generate-chapter/{chapter_id}", response_model=ApiResponse[BidChapterOut])
+async def generate_chapter(
+    project_id: int,
+    chapter_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """AI 生成单个投标章节内容"""
+    gen_svc = BidGenerationService(session)
+    try:
+        chapter = await gen_svc.generate_single_chapter(project_id, chapter_id, tenant_id)
+        return ApiResponse(data=BidChapterOut.model_validate(chapter))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"章节生成失败: {str(e)}")
+
+
+@router.post("/{project_id}/generate-all")
+async def generate_all_chapters(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """AI 批量生成所有投标章节（SSE 流式报告进度）"""
+    user_id = int(payload.get("sub", 0))
+    gen_svc = BidGenerationService(session)
+
+    async def event_stream():
+        try:
+            async for progress in gen_svc.generate_all_chapters(project_id, tenant_id, user_id):
+                yield f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
+        except ValueError as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'生成失败: {str(e)}'}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

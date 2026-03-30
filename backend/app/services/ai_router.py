@@ -22,12 +22,6 @@ from typing import AsyncGenerator, Optional
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.calc import SupportCalcInput
-from app.schemas.vent import VentCalcInput
-from app.schemas.cycle import CycleCalcInput
-from app.services.calc_engine import SupportCalcEngine
-from app.services.vent_engine import VentCalcEngine
-from app.services.cycle_engine import CycleCalcEngine
 from app.services.industry_vocab import IndustryVocabService
 
 # ========== LangFuse 可观测性（可选） ==========
@@ -52,25 +46,25 @@ except Exception as e:
 
 
 # 系统提示词 — 定义 AI 角色
-SYSTEM_PROMPT = """你是"掘进智脑"——一个煤矿掘进工作面作业规程智能生成助手。
+SYSTEM_PROMPT = """你是"鲜标智投助手"——一个生鲜食材配送投标文件智能生成助手。
 
 你的能力：
-1. **支护计算** — 根据围岩级别、断面尺寸计算锚杆锚固力、最大间距、安全系数等
-2. **通风计算** — 根据瓦斯涌出量、断面面积计算需风量，自动选型局扇
-3. **循环作业计算** — 根据掘进方式计算循环进尺、日/月进尺
-4. **标准规范检索** — 语义搜索国家标准、行业规范中的相关条款
-5. **规程建议** — 根据工程条件给出安全技术措施建议
-6. **设备材料匹配** — 根据掘进方式、断面、围岩条件自动推荐设备清单和材料工程量清单
-7. **知识库文档摘要** — 从知识库中检索指定主题的规程片段并生成结构化摘要
+1. **招标文件解析** — 分析招标文件，提取评分标准、废标项、资格要求等
+2. **法规标准检索** — 语义搜索食品安全法规、冷链标准、采购规范等
+3. **资质核验** — 比对招标资格要求与企业已有证照，找出缺口
+4. **投标章节生成** — 根据招标要求+企业信息+模板生成技术/商务方案
+5. **报价策略分析** — 基于历史中标数据给出下浮率建议
+6. **合规审查** — 五维合规检查（废标项/资质/评分覆盖/报价/食品安全）
+7. **历史案例检索** — 从中标案例库检索相似项目供参考
+8. **知识库摘要** — 从已有模板知识库检索内容片段并生成摘要
 
 沟通规则：
-- 使用专业但易懂的中文回答
-- 如果用户提供了参数，直接调用对应工具计算
-- 如果参数不完整，请友善地询问缺失项
-- 计算结果需要解读关键数据，特别是合规预警要重点标红提示
-- 引用检索到的标准条款时，标注来源（条款编号+规范名称）
-- 对危险操作（如超限参数）要主动警告
-- 设备材料推荐时要列出完整清单（设备名称/型号/数量/功率）
+- 使用专业的投标文件用语回答
+- 如果用户提供了招标文件信息，直接调用对应工具分析
+- 废标项是最危险的，发现风险必须重点警告
+- 报价数值只能给建议区间，最终定价由用户决定（安全红线）
+- 引用法规时标注来源（如《食品安全法》第XX条）
+- 资质缺口要具体到证书名称和办理建议
 """
 
 # ===== 工具定义（OpenAI Function Calling 格式） =====
@@ -78,64 +72,8 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "calc_support",
-            "description": "支护计算 — 根据围岩条件和断面参数,计算锚杆锚固力、最大间距、安全系数等。当用户询问锚杆、锚索、支护参数时调用。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "rock_class": {"type": "string", "enum": ["I","II","III","IV","V"], "description": "围岩级别"},
-                    "section_form": {"type": "string", "enum": ["矩形","拱形","梯形"], "description": "断面形式"},
-                    "section_width": {"type": "number", "description": "断面宽度(m)"},
-                    "section_height": {"type": "number", "description": "断面高度(m)"},
-                    "bolt_spacing": {"type": "number", "description": "锚杆间距(mm),可选", "default": 1000},
-                    "cable_count": {"type": "integer", "description": "锚索数量,可选", "default": 3},
-                },
-                "required": ["rock_class", "section_form", "section_width", "section_height"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "calc_ventilation",
-            "description": "通风计算 — 三法求需风量(瓦斯涌出法/人数法/炸药法) + 局扇选型。当用户询问通风、需风量、局扇时调用。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "gas_emission": {"type": "number", "description": "瓦斯绝对涌出量(m³/min)"},
-                    "gas_level": {"type": "string", "enum": ["低瓦斯","高瓦斯","突出"], "description": "瓦斯等级"},
-                    "section_area": {"type": "number", "description": "巷道断面积(m²)"},
-                    "excavation_length": {"type": "number", "description": "掘进长度(m)"},
-                    "max_workers": {"type": "integer", "description": "最多同时工作人数", "default": 25},
-                    "design_air_volume": {"type": "number", "description": "设计风量(m³/min),可选"},
-                },
-                "required": ["gas_emission", "gas_level", "section_area", "excavation_length"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "calc_cycle",
-            "description": "循环作业计算 — 工序编排 + 日/月进尺 + 正规循环率。当用户询问掘进速度、月进尺、循环时间时调用。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "dig_method": {"type": "string", "enum": ["钻爆法","综掘"], "description": "掘进方式"},
-                    "hole_depth": {"type": "number", "description": "炮眼深度(m),钻爆法用", "default": 2.0},
-                    "cut_depth": {"type": "number", "description": "截割深度(m),综掘用", "default": 0.8},
-                    "shifts_per_day": {"type": "integer", "description": "日班次", "default": 3},
-                    "design_monthly_advance": {"type": "number", "description": "设计月进尺(m),用于校核"},
-                },
-                "required": ["dig_method"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_standards",
-            "description": "标准规范语义检索 — 当用户询问国家标准、行业规范、法律法规条文、安全规程时调用。通过语义匹配找到最相关的条款原文。",
+            "name": "search_regulations",
+            "description": "食品安全法规/冷链标准语义检索 — 当用户询问法规条款、行业标准、食品安全规范时调用。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -149,48 +87,12 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "query_standard_table",
-            "description": "结构化参数查表 — 根据围岩级别、瓦斯等级、掘进方式等条件，精确查询标准参数推荐表（支护参数表、通风标准表、设备配置表）。当用户询问具体的推荐参数值、标准配置时调用。",
+            "name": "check_credentials",
+            "description": "资质核验 — 比对招标资格要求与企业已有证照，找出缺口。当用户询问资质是否齐全、缺少什么证照时调用。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "table_name": {"type": "string", "enum": ["支护参数", "通风标准", "设备配置"], "description": "要查询的参数表"},
-                    "rock_class": {"type": "string", "enum": ["I","II","III","IV","V"], "description": "围岩级别（查支护参数表时必填）"},
-                    "section_form": {"type": "string", "enum": ["矩形","拱形","梯形"], "description": "断面形式"},
-                    "gas_level": {"type": "string", "enum": ["低瓦斯","高瓦斯","突出"], "description": "瓦斯等级（查通风标准表时必填）"},
-                    "tunnel_type": {"type": "string", "enum": ["煤巷","岩巷"], "description": "巷道类型"},
-                    "dig_method": {"type": "string", "enum": ["钻爆法","综掘"], "description": "掘进方式（查设备配置表时必填）"},
-                },
-                "required": ["table_name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_recommendations",
-            "description": "规程建议 — 根据工程条件给出安全技术措施建议。当用户询问安全措施、注意事项、操作规程时调用。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "rock_class": {"type": "string", "description": "围岩级别"},
-                    "gas_level": {"type": "string", "description": "瓦斯等级"},
-                    "dig_method": {"type": "string", "description": "掘进方式"},
-                    "question": {"type": "string", "description": "用户具体问题"},
-                },
-                "required": ["question"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "match_equipment",
-            "description": "设备材料匹配 — 根据项目ID自动匹配推荐设备清单和材料工程量清单(BOM)。当用户询问需要哪些设备、材料用量、工程量、BOM清单时调用。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "project_id": {"type": "integer", "description": "项目ID（必填）"},
+                    "project_id": {"type": "integer", "description": "投标项目ID"},
                 },
                 "required": ["project_id"],
             },
@@ -199,15 +101,58 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "summarize_knowledge",
-            "description": "知识库文档摘要 — 从已上传的客户规程知识库中检索指定主题的内容片段并生成摘要。当用户询问已有规程内容、客户历史规程参考、知识库文档时调用。",
+            "name": "analyze_pricing",
+            "description": "报价策略分析 — 基于客户类型和预算给出下浮率建议。当用户询问报价、定价、下浮率时调用。注意：只给建议，最终定价由用户决定。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "topic": {"type": "string", "description": "检索主题（如：顶板管理、瓦斯防治、支护设计等）"},
+                    "project_id": {"type": "integer", "description": "投标项目ID"},
+                },
+                "required": ["project_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_bid_cases",
+            "description": "历史中标案例检索 — 从案例库中搜索相似投标项目供参考。当用户询问类似项目、历史案例、中标经验时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "搜索关键词（如: 学校食材配送）"},
+                    "top_k": {"type": "integer", "description": "返回最相关的前K条", "default": 5},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "summarize_knowledge",
+            "description": "知识库摘要 — 从已有模板知识库中检索指定主题的内容片段并生成摘要。当用户询问模板内容、行业方案参考时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "检索主题（如：冷链配送方案、食品安全管理体系）"},
                     "top_k": {"type": "integer", "description": "返回最相关的前K条片段", "default": 10},
                 },
                 "required": ["topic"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_project_summary",
+            "description": "获取投标项目概况 — 查询项目基本信息、招标要求、章节状态等。当用户询问某个项目的详情时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "integer", "description": "投标项目ID"},
+                },
+                "required": ["project_id"],
             },
         },
     },
@@ -242,54 +187,151 @@ class AIRouter:
             prompt += injection
         return prompt
 
-    def _execute_tool(self, name: str, args: dict) -> dict:
-        """执行工具调用（同步计算引擎）"""
-        if name == "calc_support":
-            inp = SupportCalcInput(**args)
-            r = SupportCalcEngine.calculate(inp)
-            return r.model_dump()
-
-        elif name == "calc_ventilation":
-            inp = VentCalcInput(**args)
-            r = VentCalcEngine.calculate(inp)
-            return r.model_dump()
-
-        elif name == "calc_cycle":
-            inp = CycleCalcInput(**args)
-            r = CycleCalcEngine.calculate(inp)
-            return r.model_dump()
-
-        elif name == "get_recommendations":
-            return {"status": "ok", "context": args}
-
-        elif name == "query_standard_table":
-            from app.services.table_query_service import TableQueryService
-            result = TableQueryService.query(
-                table_name=args.get("table_name", ""),
-                rock_class=args.get("rock_class", "III"),
-                section_form=args.get("section_form", "拱形"),
-                gas_level=args.get("gas_level", "低瓦斯"),
-                tunnel_type=args.get("tunnel_type", "煤巷"),
-                dig_method=args.get("dig_method", "钻爆法"),
-            )
-            return result if result else {"error": "未找到匹配的参数表记录", "query": args}
-
+    async def _execute_tool_async(self, name: str, args: dict) -> dict:
+        """执行工具调用（统一异步入口）"""
+        if name == "search_regulations":
+            return await self._search_regulations(args)
+        elif name == "check_credentials":
+            return await self._check_credentials(args)
+        elif name == "analyze_pricing":
+            return await self._analyze_pricing(args)
+        elif name == "search_bid_cases":
+            return await self._search_bid_cases(args)
+        elif name == "summarize_knowledge":
+            return await self._summarize_knowledge_tool(args)
+        elif name == "get_project_summary":
+            return await self._get_project_summary(args)
         else:
             return {"error": f"未知工具: {name}"}
 
-    async def _execute_tool_async(self, name: str, args: dict) -> dict:
-        """执行工具调用（支持异步 — 用于 search_standards / match_equipment / summarize_knowledge）"""
-        if name == "search_standards":
-            return await self._search_standards(args)
-        elif name == "match_equipment":
-            return await self._match_equipment_tool(args)
-        elif name == "summarize_knowledge":
-            return await self._summarize_knowledge_tool(args)
-        # 其他计算引擎是同步纯函数
-        return self._execute_tool(name, args)
+    async def _check_credentials(self, args: dict) -> dict:
+        """Tool: 资质核验 — 比对招标要求 vs 企业已有证照"""
+        if not self.session:
+            return {"error": "数据库连接不可用"}
+        try:
+            from sqlalchemy import select
+            from sqlalchemy.orm import selectinload
+            from app.models.bid_project import BidProject, TenderRequirement
+            from app.models.credential import Credential
 
-    async def _search_standards(self, args: dict) -> dict:
-        """标准库融合检索 — L1 语义 + L2 查表 + L3 re-rank"""
+            project_id = args.get("project_id")
+            result = await self.session.execute(
+                select(BidProject)
+                .where(BidProject.id == project_id, BidProject.tenant_id == self.tenant_id)
+                .options(selectinload(BidProject.requirements))
+            )
+            project = result.scalar_one_or_none()
+            if not project:
+                return {"error": "投标项目不存在"}
+
+            # 获取企业证照
+            creds = []
+            if project.enterprise_id:
+                cred_result = await self.session.execute(
+                    select(Credential).where(
+                        Credential.enterprise_id == project.enterprise_id,
+                        Credential.tenant_id == self.tenant_id,
+                    )
+                )
+                creds = list(cred_result.scalars().all())
+
+            qual_reqs = [r for r in project.requirements if r.category == "qualification"]
+            return {
+                "status": "ok",
+                "qualification_requirements": [r.content for r in qual_reqs],
+                "enterprise_credentials": [
+                    {"type": c.cred_type, "name": c.cred_name, "expiry": c.expiry_date, "verified": c.is_verified}
+                    for c in creds
+                ],
+                "credential_count": len(creds),
+                "requirement_count": len(qual_reqs),
+            }
+        except Exception as e:
+            return {"error": f"资质核验失败: {str(e)}"}
+
+    async def _analyze_pricing(self, args: dict) -> dict:
+        """Tool: 报价策略分析 — 返回项目报价相关信息（建议由 LLM 解读）"""
+        if not self.session:
+            return {"error": "数据库连接不可用"}
+        try:
+            from sqlalchemy import select
+            from app.models.bid_project import BidProject
+            project_id = args.get("project_id")
+            result = await self.session.execute(
+                select(BidProject).where(
+                    BidProject.id == project_id, BidProject.tenant_id == self.tenant_id
+                )
+            )
+            project = result.scalar_one_or_none()
+            if not project:
+                return {"error": "投标项目不存在"}
+
+            return {
+                "status": "ok",
+                "project_name": project.project_name,
+                "customer_type": project.customer_type,
+                "budget_amount": project.budget_amount,
+                "delivery_scope": project.delivery_scope,
+                "note": "报价数值仅供参考，最终定价必须由用户确认（安全红线）",
+            }
+        except Exception as e:
+            return {"error": f"报价分析失败: {str(e)}"}
+
+    async def _search_bid_cases(self, args: dict) -> dict:
+        """Tool: 历史中标案例检索"""
+        if not self.session:
+            return {"error": "数据库连接不可用"}
+        try:
+            from app.services.embedding_service import EmbeddingService
+            emb_svc = EmbeddingService(self.session)
+            results = await emb_svc.search_snippets(
+                query=args.get("query", ""),
+                tenant_id=self.tenant_id,
+                top_k=args.get("top_k", 5),
+                threshold=0.4,
+            )
+            if not results:
+                return {"status": "no_results", "message": "未找到相似中标案例"}
+            return {
+                "status": "ok",
+                "total": len(results),
+                "cases": [
+                    {"chapter": r.get("chapter_name", ""), "content": r.get("content", "")[:500]}
+                    for r in results
+                ],
+            }
+        except Exception as e:
+            return {"error": f"案例检索失败: {str(e)}"}
+
+    async def _get_project_summary(self, args: dict) -> dict:
+        """Tool: 获取投标项目概况"""
+        if not self.session:
+            return {"error": "数据库连接不可用"}
+        try:
+            from app.services.bid_project_service import BidProjectService
+            svc = BidProjectService(self.session)
+            project = await svc.get_project(args.get("project_id", 0), self.tenant_id)
+            if not project:
+                return {"error": "投标项目不存在"}
+            return {
+                "status": "ok",
+                "project_name": project.project_name,
+                "tender_org": project.tender_org,
+                "customer_type": project.customer_type,
+                "budget_amount": project.budget_amount,
+                "deadline": project.deadline,
+                "status": project.status,
+                "requirements_count": len(project.requirements),
+                "chapters_count": len(project.chapters),
+                "disqualification_count": sum(
+                    1 for r in project.requirements if r.category == "disqualification"
+                ),
+            }
+        except Exception as e:
+            return {"error": f"查询失败: {str(e)}"}
+
+    async def _search_regulations(self, args: dict) -> dict:
+        """食品安全法规/冷链标准语义检索"""
         if not self.session:
             return {"error": "数据库连接不可用", "results": []}
 
@@ -325,52 +367,6 @@ class AIRouter:
             }
         except Exception as e:
             return {"error": f"融合检索失败: {str(e)}", "results": []}
-
-    async def _match_equipment_tool(self, args: dict) -> dict:
-        """Tool: 设备材料匹配 — 调用 EquipmentMaterialEngine"""
-        if not self.session:
-            return {"error": "数据库连接不可用"}
-
-        project_id = args.get("project_id")
-        if not project_id:
-            return {"error": "缺少 project_id 参数"}
-
-        try:
-            from app.services.equipment_material_engine import EquipmentMaterialEngine
-            engine = EquipmentMaterialEngine(self.session)
-            result = await engine.run_full_match(project_id, self.tenant_id)
-            return {
-                "status": "ok",
-                "project_id": result.project_id,
-                "total_equipment": result.total_equipment_count,
-                "total_materials": result.total_material_types,
-                "equipment_list": [
-                    {
-                        "name": eq.name,
-                        "category": eq.category,
-                        "model_spec": eq.model_spec,
-                        "quantity": eq.quantity,
-                        "power_kw": eq.power_kw,
-                    }
-                    for eq in result.equipment_list
-                ],
-                "material_bom": [
-                    {
-                        "name": mat.name,
-                        "category": mat.category,
-                        "model_spec": mat.model_spec,
-                        "unit": mat.unit,
-                        "qty_per_cycle": mat.qty_per_cycle,
-                        "qty_per_month": mat.qty_per_month,
-                        "qty_total": mat.qty_total,
-                    }
-                    for mat in result.material_bom
-                ],
-            }
-        except ValueError as e:
-            return {"error": str(e)}
-        except Exception as e:
-            return {"error": f"设备材料匹配失败: {str(e)}"}
 
     async def _summarize_knowledge_tool(self, args: dict) -> dict:
         """Tool: 知识库文档摘要 — 检索客户已有规程片段并结构化输出"""
