@@ -32,7 +32,7 @@ export const PIPELINE_LAYERS: PipelineLayer[] = [
   {
     id: "calc_inject",
     name: "计算推导注入",
-    desc: "支护/通风/循环完整计算过程文本化，嵌入正文",
+    desc: "报价计算/资质核验/配送方案完整推导文本化，嵌入正文",
     icon: "🧮",
     color: "cyan",
   },
@@ -60,7 +60,7 @@ export const PIPELINE_LAYERS: PipelineLayer[] = [
   {
     id: "consistency",
     name: "跨章节一致性扫描",
-    desc: "检测数据矛盾（断层/设备/人员/水量等），自动修正",
+    desc: "检测数据矛盾（价格/资质/配送范围/人员配置等），自动修正",
     icon: "🛡️",
     color: "rose",
   },

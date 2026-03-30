@@ -343,7 +343,7 @@ class AIRouter:
 
             # 从 args 中提取上下文参数（如果有）
             context = {}
-            for key in ["rock_class", "section_form", "gas_level", "tunnel_type", "dig_method"]:
+            for key in ["customer_type", "tender_type", "food_category", "delivery_scope", "budget_range"]:
                 if args.get(key):
                     context[key] = args[key]
 

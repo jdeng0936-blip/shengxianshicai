@@ -88,7 +88,10 @@ class BidComplianceService:
         enterprise = None
         if project.enterprise_id:
             ent_result = await self.session.execute(
-                select(Enterprise).where(Enterprise.id == project.enterprise_id)
+                select(Enterprise).where(
+                    Enterprise.id == project.enterprise_id,
+                    Enterprise.tenant_id == tenant_id,  # 安全: 强制租户隔离
+                )
             )
             enterprise = ent_result.scalar_one_or_none()
 

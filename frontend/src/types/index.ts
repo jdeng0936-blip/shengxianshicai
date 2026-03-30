@@ -6,53 +6,37 @@
 
 import type { LucideIcon } from "lucide-react";
 
-/* ===== 项目相关 ===== */
+/* ===== 投标项目相关 ===== */
 
-/** 矿井信息 */
-export interface Mine {
+/** 投标企业信息 */
+export interface Enterprise {
   id: number;
   name: string;
+  short_name?: string;
+  credit_code?: string;
+  food_license_no?: string;
+  haccp_certified?: boolean;
   tenant_id?: number;
 }
 
-/** 项目参数 */
-export interface ProjectParams {
-  rock_class?: string;
-  gas_level?: string;
-  section_width?: number;
-  section_height?: number;
-  section_form?: string;
-  excavation_method?: string;
-  coal_thickness?: number;
-  spontaneous_combustion?: string;
-  excavation_length?: number;
-  gas_emission?: number;
-  max_workers?: number;
-  bolt_length?: number;
-  bolt_diameter?: number;
-  bolt_spacing?: number;
-  bolt_row_spacing?: number;
-  cable_count?: number;
-  cable_strength?: number;
-}
-
-/** 项目信息 */
-export interface Project {
+/** 投标项目信息 */
+export interface BidProject {
   id: number;
-  face_name: string;
-  mine_name?: string;
-  mine_id?: number;
-  status: "draft" | "in_progress" | "completed";
-  updated_at?: string;
+  project_name: string;
+  enterprise_id?: number;
+  tender_org?: string;
+  customer_type?: string;
+  tender_type?: string;
+  deadline?: string;
+  budget_amount?: number;
+  bid_amount?: number;
+  delivery_scope?: string;
+  delivery_period?: string;
+  status: "draft" | "parsing" | "generating" | "reviewing" | "finalized" | "submitted";
+  tender_doc_path?: string;
+  bid_doc_path?: string;
   created_at?: string;
-  params?: ProjectParams;
-  // 展开后的参数（前端会把 params 展开到顶层）
-  rock_class?: string;
-  gas_level?: string;
-  section_width?: number;
-  section_height?: number;
-  section_form?: string;
-  excavation_method?: string;
+  updated_at?: string;
 }
 
 /* ===== 文档相关 ===== */

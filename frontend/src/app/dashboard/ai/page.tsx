@@ -169,7 +169,7 @@ export default function AIChatPage() {
           session_id: activeSessionId,
           message: text,
           stream: true,
-          industry_type: "coal_excavation",
+          industry_type: "fresh_food",
         }),
       });
 
@@ -371,7 +371,7 @@ export default function AIChatPage() {
                 AI 智能助手
               </h2>
               <p className="text-xs text-slate-400">
-                支护计算 · 通风校核 · 设备匹配 · 知识检索 · 合规检测
+                招标解析 · 方案生成 · 报价优化 · 知识检索 · 合规检测
               </p>
             </div>
           </div>
@@ -517,7 +517,7 @@ export default function AIChatPage() {
           <div className="mx-auto flex max-w-3xl gap-3">
             <Input
               className="flex-1 rounded-xl"
-              placeholder="输入问题，例如：帮我计算通风量..."
+              placeholder="输入问题，例如：帮我分析这份招标文件..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) =>

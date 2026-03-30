@@ -23,9 +23,9 @@ interface User {
 interface Role {
   id: number; name: string; description: string | null; created_at: string | null;
 }
-interface Mine {
-  id: number; name: string; company: string | null; gas_level: string | null;
-  address: string | null; contact: string | null; phone: string | null; created_at: string | null;
+interface LocalUserItem {
+  id: number; username: string; role_id: number | null;
+  is_active: boolean; created_at: string;
 }
 interface AuditLogItem {
   id: number; user_id: number; username: string; action: string;
@@ -325,59 +325,79 @@ function RolePanel() {
   );
 }
 
-// ==================== 矿井配置面板 ====================
+// ==================== 企业管理面板 ====================
 function MinePanel() {
-  const [mines, setMines] = useState<Mine[]>([]);
+  // 注: 函数名保持 MinePanel 以避免变更 MODULES 数组的引用
+  const [items, setItems] = useState<Enterprise[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
-  const [form, setForm] = useState({ name: "", company: "", gas_level: "", address: "", contact: "", phone: "" });
+  const [form, setForm] = useState({
+    name: "", short_name: "", credit_code: "", legal_person: "",
+    food_license_no: "", address: "", contact_name: "", contact_phone: "",
+  });
 
-  const fetchMines = useCallback(async () => {
+  interface Enterprise {
+    id: number; name: string; short_name: string | null; credit_code: string | null;
+    legal_person: string | null; food_license_no: string | null;
+    address: string | null; contact_name: string | null; contact_phone: string | null;
+    created_at: string | null;
+  }
+
+  const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get("/system/mines", { params: { page, page_size: 15 } });
-      setMines(r.data.data?.items || []); setTotal(r.data.data?.total || 0);
+      const r = await api.get("/enterprises", { params: { page, page_size: 15 } });
+      setItems(r.data.data?.items || r.data.data || []); setTotal(r.data.data?.total || items.length);
     } catch {} finally { setLoading(false); }
   }, [page]);
-  useEffect(() => { fetchMines(); }, [fetchMines]);
+  useEffect(() => { fetchItems(); }, [fetchItems]);
 
   const handleSave = async () => {
     try {
-      const payload = { ...form, company: form.company || null, gas_level: form.gas_level || null, address: form.address || null, contact: form.contact || null, phone: form.phone || null };
-      if (editId) { await api.put(`/system/mines/${editId}`, payload); } else { await api.post("/system/mines", payload); }
-      resetForm(); fetchMines();
+      const payload = {
+        ...form,
+        short_name: form.short_name || null, credit_code: form.credit_code || null,
+        legal_person: form.legal_person || null, food_license_no: form.food_license_no || null,
+        address: form.address || null, contact_name: form.contact_name || null,
+        contact_phone: form.contact_phone || null,
+      };
+      if (editId) { await api.put(`/enterprises/${editId}`, payload); } else { await api.post("/enterprises", payload); }
+      resetForm(); fetchItems();
     } catch (e: any) { alert(e.response?.data?.detail || "保存失败"); }
   };
-  const handleDelete = async (id: number) => { if (!confirm("确定删除此矿井？")) return; await api.delete(`/system/mines/${id}`); fetchMines(); };
-  const startEdit = (m: Mine) => {
-    setEditId(m.id); setForm({ name: m.name, company: m.company || "", gas_level: m.gas_level || "", address: m.address || "", contact: m.contact || "", phone: m.phone || "" }); setShowForm(true);
+  const handleDelete = async (id: number) => { if (!confirm("确定删除此企业？")) return; await api.delete(`/enterprises/${id}`); fetchItems(); };
+  const startEdit = (m: Enterprise) => {
+    setEditId(m.id); setForm({
+      name: m.name, short_name: m.short_name || "", credit_code: m.credit_code || "",
+      legal_person: m.legal_person || "", food_license_no: m.food_license_no || "",
+      address: m.address || "", contact_name: m.contact_name || "", contact_phone: m.contact_phone || "",
+    }); setShowForm(true);
   };
-  const resetForm = () => { setEditId(null); setForm({ name: "", company: "", gas_level: "", address: "", contact: "", phone: "" }); setShowForm(false); };
+  const resetForm = () => { setEditId(null); setForm({ name: "", short_name: "", credit_code: "", legal_person: "", food_license_no: "", address: "", contact_name: "", contact_phone: "" }); setShowForm(false); };
 
   const pageSize = 15; const totalPages = Math.ceil(total / pageSize);
 
   return (
     <>
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-500">共 {total} 个矿井</span>
-        <Button className="gap-1" onClick={() => { resetForm(); setShowForm(!showForm); }}><Plus className="h-4 w-4" /> 新增矿井</Button>
+        <span className="text-sm text-slate-500">共 {total} 家企业</span>
+        <Button className="gap-1" onClick={() => { resetForm(); setShowForm(!showForm); }}><Plus className="h-4 w-4" /> 新增企业</Button>
       </div>
       {showForm && (
         <Card className="border-blue-200 bg-blue-50/30">
           <CardContent className="pt-4">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <Input placeholder="矿井名称 *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <Input placeholder="所属公司" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
-              <select className="rounded-md border px-3 py-2 text-sm" value={form.gas_level} onChange={(e) => setForm({ ...form, gas_level: e.target.value })}>
-                <option value="">瓦斯等级</option>
-                <option value="低瓦斯">低瓦斯</option><option value="高瓦斯">高瓦斯</option><option value="煤与瓦斯突出">煤与瓦斯突出</option>
-              </select>
-              <Input placeholder="矿井地址" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-              <Input placeholder="联系人" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} />
-              <Input placeholder="联系电话" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <Input placeholder="企业名称 *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <Input placeholder="企业简称" value={form.short_name} onChange={(e) => setForm({ ...form, short_name: e.target.value })} />
+              <Input placeholder="统一社会信用代码" value={form.credit_code} onChange={(e) => setForm({ ...form, credit_code: e.target.value })} />
+              <Input placeholder="法定代表人" value={form.legal_person} onChange={(e) => setForm({ ...form, legal_person: e.target.value })} />
+              <Input placeholder="食品经营许可证号" value={form.food_license_no} onChange={(e) => setForm({ ...form, food_license_no: e.target.value })} />
+              <Input placeholder="企业地址" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+              <Input placeholder="联系人" value={form.contact_name} onChange={(e) => setForm({ ...form, contact_name: e.target.value })} />
+              <Input placeholder="联系电话" value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} />
             </div>
             <div className="mt-3 flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={resetForm}>取消</Button>
@@ -391,16 +411,16 @@ function MinePanel() {
           {loading ? <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div> : (
             <Table>
               <TableHeader><TableRow>
-                <TableHead>名称</TableHead><TableHead>公司</TableHead><TableHead>瓦斯等级</TableHead>
+                <TableHead>企业名称</TableHead><TableHead>简称</TableHead><TableHead>信用代码</TableHead>
                 <TableHead>联系人</TableHead><TableHead className="text-right">操作</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {mines.map((m) => (
+                {items.map((m) => (
                   <TableRow key={m.id}>
                     <TableCell className="font-medium">{m.name}</TableCell>
-                    <TableCell className="text-sm text-slate-500">{m.company || "-"}</TableCell>
-                    <TableCell><span className="rounded bg-slate-100 px-2 py-0.5 text-xs">{m.gas_level || "-"}</span></TableCell>
-                    <TableCell className="text-sm">{m.contact || "-"}</TableCell>
+                    <TableCell className="text-sm text-slate-500">{m.short_name || "-"}</TableCell>
+                    <TableCell><span className="rounded bg-slate-100 px-2 py-0.5 text-xs">{m.credit_code || "-"}</span></TableCell>
+                    <TableCell className="text-sm">{m.contact_name || "-"}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" onClick={() => startEdit(m)}><Pencil className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="sm" className="text-red-500" onClick={() => handleDelete(m.id)}><Trash2 className="h-4 w-4" /></Button>
@@ -550,7 +570,7 @@ function DictPanel() {
         <Card className="border-blue-200 bg-blue-50/30">
           <CardContent className="pt-4">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-              <Input placeholder="类型 * (如 rock_class)" value={form.dict_type} onChange={(e) => setForm({ ...form, dict_type: e.target.value })} disabled={!!editId} />
+              <Input placeholder="类型 * (如 customer_type)" value={form.dict_type} onChange={(e) => setForm({ ...form, dict_type: e.target.value })} disabled={!!editId} />
               <Input placeholder="键 *" value={form.dict_key} onChange={(e) => setForm({ ...form, dict_key: e.target.value })} />
               <Input placeholder="值（显示文本）*" value={form.dict_value} onChange={(e) => setForm({ ...form, dict_value: e.target.value })} />
               <Input placeholder="排序" type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} />

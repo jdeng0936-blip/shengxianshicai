@@ -20,7 +20,7 @@ class AuditLog(Base):
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True, comment="操作用户ID")
     username: Mapped[str] = mapped_column(String(50), nullable=False, comment="操作用户名（冗余，防止用户删除后丢失）")
     action: Mapped[str] = mapped_column(String(50), nullable=False, index=True, comment="操作类型(create/update/delete/login/export)")
-    resource: Mapped[str] = mapped_column(String(100), nullable=False, comment="操作资源(user/role/mine/drawing/project/...)")
+    resource: Mapped[str] = mapped_column(String(100), nullable=False, comment="操作资源(user/role/enterprise/bid_project/credential/...)")
     detail: Mapped[str | None] = mapped_column(Text, nullable=True, comment="操作详情描述")
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True, comment="操作IP地址")
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True, comment="租户ID")

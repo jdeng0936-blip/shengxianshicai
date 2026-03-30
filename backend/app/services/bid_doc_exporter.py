@@ -84,7 +84,7 @@ class BidDocExporter:
         if not project.chapters:
             raise ValueError("项目尚未初始化章节，请先生成章节内容")
 
-        enterprise = await self._load_enterprise(project.enterprise_id)
+        enterprise = await self._load_enterprise(project.enterprise_id, tenant_id)
         credentials = await self._load_credentials(project.enterprise_id, tenant_id) if enterprise else []
         quotation = await self._load_latest_quotation(project_id, tenant_id)
 
@@ -99,11 +99,15 @@ class BidDocExporter:
 
     # ========== 数据加载 ==========
 
-    async def _load_enterprise(self, enterprise_id: Optional[int]) -> Optional[Enterprise]:
+    async def _load_enterprise(self, enterprise_id: Optional[int], tenant_id: int) -> Optional[Enterprise]:
+        """加载企业信息 — 强制 tenant_id 隔离，防止跨租户越权"""
         if not enterprise_id:
             return None
         result = await self.session.execute(
-            select(Enterprise).where(Enterprise.id == enterprise_id)
+            select(Enterprise).where(
+                Enterprise.id == enterprise_id,
+                Enterprise.tenant_id == tenant_id,  # 安全: 必须属于当前租户
+            )
         )
         return result.scalar_one_or_none()
 

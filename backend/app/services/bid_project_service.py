@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.bid_project import BidProject, TenderRequirement, BidChapter
+from app.models.enterprise import Enterprise
 from app.schemas.bid_project import (
     BidProjectCreate, BidProjectUpdate,
     TenderRequirementCreate, TenderRequirementUpdate,
@@ -48,6 +49,10 @@ class BidProjectService:
     async def create_project(
         self, data: BidProjectCreate, tenant_id: int, user_id: int
     ) -> BidProject:
+        # 安全: 校验 enterprise_id 是否属于当前租户
+        if data.enterprise_id:
+            await self._verify_enterprise_ownership(data.enterprise_id, tenant_id)
+
         project = BidProject(
             tenant_id=tenant_id,
             created_by=user_id,
@@ -64,7 +69,13 @@ class BidProjectService:
         project = await self.get_project(project_id, tenant_id)
         if not project:
             return None
-        for k, v in data.model_dump(exclude_none=True).items():
+
+        # 安全: 如果更新了 enterprise_id，校验归属
+        update_data = data.model_dump(exclude_none=True)
+        if "enterprise_id" in update_data and update_data["enterprise_id"]:
+            await self._verify_enterprise_ownership(update_data["enterprise_id"], tenant_id)
+
+        for k, v in update_data.items():
             setattr(project, k, v)
         await self.session.commit()
         await self.session.refresh(project)
@@ -77,6 +88,19 @@ class BidProjectService:
         await self.session.delete(project)
         await self.session.commit()
         return True
+
+    async def _verify_enterprise_ownership(self, enterprise_id: int, tenant_id: int):
+        """安全: 校验 enterprise_id 是否属于当前租户，防止跨租户企业挂载"""
+        result = await self.session.execute(
+            select(Enterprise.id).where(
+                Enterprise.id == enterprise_id,
+                Enterprise.tenant_id == tenant_id,
+            )
+        )
+        if not result.scalar_one_or_none():
+            raise PermissionError(
+                f"企业(id={enterprise_id})不属于当前租户，禁止绑定"
+            )
 
     async def update_status(
         self, project_id: int, tenant_id: int, status: str

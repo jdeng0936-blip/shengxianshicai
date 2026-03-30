@@ -39,7 +39,7 @@ class HybridRetriever:
 
         Args:
             query: 用户自然语言查询
-            context: 上下文参数（围岩级别、瓦斯等级等），用于 L2 查表
+            context: 上下文参数（行业类别、客户类型等），用于 L2 查表
             top_k: L1 语义检索返回条数
 
         Returns:
@@ -103,9 +103,9 @@ class HybridRetriever:
 
         # 标准库语义结果（按 doc_type 加权：集团标准 > 国标 > 其他）
         DOC_TYPE_WEIGHT = {
-            "集团标准": 1.5,    # 华阳集团《采掘运技术管理规定》等
+            "合同范本":   1.5,    # 生鲜配送合同范本等
             "技术规范": 1.0,    # 国标/行标
-            "法律法规": 1.0,    # 《煤矿安全规程》等
+            "法律法规": 1.0,    # 《食品安全法》等
             "安全规程": 1.0,
         }
         for item in semantic:

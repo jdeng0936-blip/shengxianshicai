@@ -1,7 +1,7 @@
 """
 数据字典模型 — 通用键值对
 
-用于管理业务下拉框选项（岩性分类、断面类型、支护方式等）。
+用于管理业务下拉框选项（客户类型、招标方式、食材分类等）。
 """
 from sqlalchemy import String, Integer, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,7 +16,7 @@ class SysDictItem(AuditMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     dict_type: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True,
-        comment="字典类型(rock_class/section_form/support_type/gas_level/...)"
+        comment="字典类型(customer_type/tender_type/food_category/delivery_method/...)"
     )
     dict_key: Mapped[str] = mapped_column(String(50), nullable=False, comment="字典键")
     dict_value: Mapped[str] = mapped_column(String(200), nullable=False, comment="字典值（显示文本）")

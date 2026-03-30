@@ -61,7 +61,10 @@ class QuotationService:
         # 自动递增版本号
         max_ver = await self.session.execute(
             select(func.coalesce(func.max(QuotationSheet.version), 0))
-            .where(QuotationSheet.project_id == data.project_id)
+            .where(
+                QuotationSheet.project_id == data.project_id,
+                QuotationSheet.tenant_id == tenant_id,  # 安全: 防止跨租户版本号干扰
+            )
         )
         next_version = (max_ver.scalar() or 0) + 1
 
