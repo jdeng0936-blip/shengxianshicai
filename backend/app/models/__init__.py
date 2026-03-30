@@ -7,7 +7,7 @@
 from app.models.base import Base, AuditMixin  # noqa: F401
 
 # 用户与权限（直接复用）
-from app.models.user import User  # noqa: F401
+from app.models.user import SysUser, SysRole  # noqa: F401
 
 # 核心业务模型（投标）
 from app.models.enterprise import Enterprise  # noqa: F401
@@ -30,4 +30,4 @@ from app.models.feedback import FeedbackLog  # noqa: F401
 
 # 系统
 from app.models.audit_log import AuditLog  # noqa: F401
-from app.models.dict_item import DictItem  # noqa: F401
+from app.models.dict_item import SysDictItem  # noqa: F401

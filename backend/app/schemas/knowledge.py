@@ -12,34 +12,37 @@ from pydantic import BaseModel, Field, ConfigDict
 
 # ========== DAT-02 工程案例 ==========
 
-class EngCaseCreate(BaseModel):
+class BidCaseCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200, description="案例名称")
-    mine_name: Optional[str] = Field(None, max_length=100, description="矿井名称")
-    excavation_type: Optional[str] = Field(None, description="掘进类型")
-    rock_class: Optional[str] = Field(None, description="围岩级别")
-    summary: Optional[str] = Field(None, description="案例摘要")
+    customer_type: Optional[str] = Field(None, max_length=20, description="客户类型")
+    buyer_name: Optional[str] = Field(None, max_length=200, description="采购方名称")
+    bid_amount: Optional[str] = Field(None, max_length=50, description="中标金额")
+    discount_rate: Optional[str] = Field(None, max_length=20, description="下浮率")
+    summary: Optional[str] = Field(None, description="案例摘要/技术亮点")
     file_url: Optional[str] = Field(None, description="案例文件地址")
 
 
-class EngCaseUpdate(BaseModel):
+class BidCaseUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=200)
-    mine_name: Optional[str] = None
-    excavation_type: Optional[str] = None
-    rock_class: Optional[str] = None
+    customer_type: Optional[str] = None
+    buyer_name: Optional[str] = None
+    bid_amount: Optional[str] = None
+    discount_rate: Optional[str] = None
     summary: Optional[str] = None
     file_url: Optional[str] = None
 
 
-class EngCaseOut(BaseModel):
+class BidCaseOut(BaseModel):
     id: int
     title: str
-    mine_name: Optional[str]
-    excavation_type: Optional[str]
-    rock_class: Optional[str]
-    summary: Optional[str]
-    file_url: Optional[str]
+    customer_type: Optional[str] = None
+    buyer_name: Optional[str] = None
+    bid_amount: Optional[str] = None
+    discount_rate: Optional[str] = None
+    summary: Optional[str] = None
+    file_url: Optional[str] = None
     tenant_id: int
-    created_at: Optional[datetime]
+    created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -8,10 +8,10 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.standard import EngCase
+from app.models.standard import BidCase
 from app.models.document import DocTemplate, ChapterSnippet
 from app.schemas.knowledge import (
-    EngCaseCreate, EngCaseUpdate,
+    BidCaseCreate, BidCaseUpdate,
     DocTemplateCreate,
     ChapterSnippetCreate, ChapterSnippetUpdate,
 )
@@ -25,16 +25,16 @@ class KnowledgeService:
 
     # ========== DAT-02 工程案例 ==========
 
-    async def list_cases(self, tenant_id: int) -> list[EngCase]:
+    async def list_cases(self, tenant_id: int) -> list[BidCase]:
         result = await self.session.execute(
-            select(EngCase)
-            .where(EngCase.tenant_id == tenant_id)
-            .order_by(EngCase.created_at.desc())
+            select(BidCase)
+            .where(BidCase.tenant_id == tenant_id)
+            .order_by(BidCase.created_at.desc())
         )
         return list(result.scalars().all())
 
-    async def create_case(self, data: EngCaseCreate, tenant_id: int, user_id: int) -> EngCase:
-        case = EngCase(
+    async def create_case(self, data: BidCaseCreate, tenant_id: int, user_id: int) -> BidCase:
+        case = BidCase(
             **data.model_dump(exclude_none=True),
             tenant_id=tenant_id, created_by=user_id,
         )
@@ -43,9 +43,9 @@ class KnowledgeService:
         await self.session.refresh(case)
         return case
 
-    async def update_case(self, case_id: int, tenant_id: int, data: EngCaseUpdate) -> Optional[EngCase]:
+    async def update_case(self, case_id: int, tenant_id: int, data: BidCaseUpdate) -> Optional[BidCase]:
         result = await self.session.execute(
-            select(EngCase).where(EngCase.id == case_id, EngCase.tenant_id == tenant_id)
+            select(BidCase).where(BidCase.id == case_id, BidCase.tenant_id == tenant_id)
         )
         case = result.scalar_one_or_none()
         if not case:
@@ -58,7 +58,7 @@ class KnowledgeService:
 
     async def delete_case(self, case_id: int, tenant_id: int) -> bool:
         result = await self.session.execute(
-            select(EngCase).where(EngCase.id == case_id, EngCase.tenant_id == tenant_id)
+            select(BidCase).where(BidCase.id == case_id, BidCase.tenant_id == tenant_id)
         )
         case = result.scalar_one_or_none()
         if not case:

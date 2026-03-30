@@ -8,7 +8,7 @@ from app.core.database import get_async_session
 from app.core.deps import get_current_user_payload, get_tenant_id
 from app.schemas.common import ApiResponse
 from app.schemas.knowledge import (
-    EngCaseCreate, EngCaseUpdate, EngCaseOut,
+    BidCaseCreate, BidCaseUpdate, BidCaseOut,
     DocTemplateCreate, DocTemplateOut,
     ChapterSnippetCreate, ChapterSnippetUpdate, ChapterSnippetOut,
 )
@@ -19,32 +19,32 @@ router = APIRouter(prefix="/knowledge", tags=["知识库"])
 
 # ========== DAT-02 工程案例 ==========
 
-@router.get("/cases", response_model=ApiResponse[list[EngCaseOut]])
+@router.get("/cases", response_model=ApiResponse[list[BidCaseOut]])
 async def list_cases(
     tenant_id: int = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_async_session),
 ):
     svc = KnowledgeService(session)
     items = await svc.list_cases(tenant_id)
-    return ApiResponse(data=[EngCaseOut.model_validate(i) for i in items])
+    return ApiResponse(data=[BidCaseOut.model_validate(i) for i in items])
 
 
-@router.post("/cases", response_model=ApiResponse[EngCaseOut])
+@router.post("/cases", response_model=ApiResponse[BidCaseOut])
 async def create_case(
-    body: EngCaseCreate,
+    body: BidCaseCreate,
     tenant_id: int = Depends(get_tenant_id),
     payload: dict = Depends(get_current_user_payload),
     session: AsyncSession = Depends(get_async_session),
 ):
     svc = KnowledgeService(session)
     item = await svc.create_case(body, tenant_id, int(payload.get("sub", 0)))
-    return ApiResponse(data=EngCaseOut.model_validate(item))
+    return ApiResponse(data=BidCaseOut.model_validate(item))
 
 
-@router.put("/cases/{case_id}", response_model=ApiResponse[EngCaseOut])
+@router.put("/cases/{case_id}", response_model=ApiResponse[BidCaseOut])
 async def update_case(
     case_id: int,
-    body: EngCaseUpdate,
+    body: BidCaseUpdate,
     tenant_id: int = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -52,7 +52,7 @@ async def update_case(
     item = await svc.update_case(case_id, tenant_id, body)
     if not item:
         raise HTTPException(status_code=404, detail="案例不存在")
-    return ApiResponse(data=EngCaseOut.model_validate(item))
+    return ApiResponse(data=BidCaseOut.model_validate(item))
 
 
 @router.delete("/cases/{case_id}", response_model=ApiResponse)
