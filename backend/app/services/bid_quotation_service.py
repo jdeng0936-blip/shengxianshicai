@@ -129,10 +129,11 @@ class BidQuotationService:
         # 推断需要报价的品类
         categories = self._detect_categories(project)
 
-        # 自动递增版本号
+        # 自动递增版本号（严格 tenant_id 隔离）
         max_ver = await self.session.execute(
             select(func.coalesce(func.max(QuotationSheet.version), 0))
             .where(QuotationSheet.project_id == project_id)
+            .where(QuotationSheet.tenant_id == tenant_id)
         )
         next_version = (max_ver.scalar() or 0) + 1
 

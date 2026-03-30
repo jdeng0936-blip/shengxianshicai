@@ -86,7 +86,7 @@ class BidDocExporter:
 
         enterprise = await self._load_enterprise(project.enterprise_id)
         credentials = await self._load_credentials(project.enterprise_id, tenant_id) if enterprise else []
-        quotation = await self._load_latest_quotation(project_id)
+        quotation = await self._load_latest_quotation(project_id, tenant_id)
 
         # 2. 渲染 Word
         file_path = self._render_docx(project, enterprise, credentials, quotation)
@@ -118,10 +118,11 @@ class BidDocExporter:
         )
         return list(result.scalars().all())
 
-    async def _load_latest_quotation(self, project_id: int) -> Optional[QuotationSheet]:
+    async def _load_latest_quotation(self, project_id: int, tenant_id: int) -> Optional[QuotationSheet]:
         result = await self.session.execute(
             select(QuotationSheet)
             .where(QuotationSheet.project_id == project_id)
+            .where(QuotationSheet.tenant_id == tenant_id)
             .order_by(QuotationSheet.version.desc())
             .limit(1)
         )
