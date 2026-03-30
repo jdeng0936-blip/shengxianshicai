@@ -38,6 +38,7 @@ interface TenderRequirement {
 interface BidProject {
   id: number;
   project_name: string;
+  enterprise_id?: number;
   tender_org?: string;
   customer_type?: string;
   tender_type?: string;

@@ -95,8 +95,8 @@ export default function NewBidProjectPage() {
               <div className="space-y-2">
                 <Label>客户类型</Label>
                 <Select
-                  value={form.customer_type}
-                  onValueChange={(v) => setForm({ ...form, customer_type: v })}
+                  value={form.customer_type || ""}
+                  onValueChange={(v: string | null) => setForm({ ...form, customer_type: v || "" })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="选择客户类型" />
@@ -113,8 +113,8 @@ export default function NewBidProjectPage() {
               <div className="space-y-2">
                 <Label>招标方式</Label>
                 <Select
-                  value={form.tender_type}
-                  onValueChange={(v) => setForm({ ...form, tender_type: v })}
+                  value={form.tender_type || ""}
+                  onValueChange={(v: string | null) => setForm({ ...form, tender_type: v || "" })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="选择招标方式" />
