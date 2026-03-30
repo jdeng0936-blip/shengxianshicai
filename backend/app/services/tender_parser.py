@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.prompt_manager import prompt_manager
+from app.core.llm_selector import LLMSelector
 from app.models.bid_project import BidProject, BidProjectStatus
 from app.schemas.bid_project import TenderRequirementCreate
 from app.services.bid_project_service import BidProjectService
@@ -33,15 +34,6 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc"}
 CHUNK_MAX_CHARS = 8000
 
 
-def _load_llm_task_config(task_name: str) -> dict:
-    """从 llm_registry.yaml 加载任务配置"""
-    registry_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "llm_registry.yaml",
-    )
-    with open(registry_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return data.get("tasks", {}).get(task_name, {})
 
 
 def extract_text_from_pdf(file_path: str) -> str:
@@ -175,7 +167,7 @@ class TenderParseService:
         from openai import AsyncOpenAI
 
         # 加载 LLM 任务配置
-        task_config = _load_llm_task_config("tender_parse")
+        task_config = LLMSelector.get_config("tender_parse")
         model = (task_config.get("models") or [settings.AI_MODEL])[0]
         temperature = task_config.get("temperature", 0.1)
         max_tokens = task_config.get("max_tokens", 4096)

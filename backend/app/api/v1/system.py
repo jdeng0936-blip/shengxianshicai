@@ -1,7 +1,7 @@
 """
 系统管理 API 路由
 
-覆盖用户管理、角色权限、矿井配置、操作日志、数据字典五个子模块。
+覆盖用户管理、角色权限、操作日志、数据字典四个子模块。
 所有接口强制 JWT 认证 + tenant_id 隔离。
 """
 from typing import Optional
@@ -15,12 +15,11 @@ from app.schemas.common import ApiResponse, PaginatedData
 from app.schemas.system import (
     UserCreate, UserUpdate, UserOut, PasswordReset,
     RoleCreate, RoleUpdate, RoleOut,
-    MineCreate, MineUpdate, MineOut,
     AuditLogOut,
     DictItemCreate, DictItemUpdate, DictItemOut,
 )
 from app.services.system_service import (
-    UserService, RoleService, MineService, AuditLogService, DictService,
+    UserService, RoleService, AuditLogService, DictService,
 )
 
 router = APIRouter(prefix="/system", tags=["系统管理"])
@@ -182,68 +181,6 @@ async def delete_role(
     await session.commit()
     return ApiResponse(message="删除成功")
 
-
-# ==================== 矿井配置 ====================
-
-@router.get("/mines", response_model=ApiResponse[PaginatedData[MineOut]])
-async def list_mines(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    tenant_id: int = Depends(get_tenant_id),
-    session: AsyncSession = Depends(get_async_session),
-):
-    """获取矿井列表"""
-    svc = MineService(session)
-    mines, total = await svc.list_mines(tenant_id, page, page_size)
-    return ApiResponse(data=PaginatedData(
-        items=[MineOut.model_validate(m) for m in mines],
-        total=total, page=page, page_size=page_size,
-    ))
-
-
-@router.post("/mines", response_model=ApiResponse[MineOut], status_code=201)
-async def create_mine(
-    body: MineCreate,
-    payload: dict = Depends(get_current_user_payload),
-    tenant_id: int = Depends(get_tenant_id),
-    session: AsyncSession = Depends(get_async_session),
-):
-    """新增矿井"""
-    svc = MineService(session)
-    mine = await svc.create_mine(body, tenant_id, int(payload["sub"]))
-    await session.commit()
-    return ApiResponse(data=MineOut.model_validate(mine))
-
-
-@router.put("/mines/{mine_id}", response_model=ApiResponse[MineOut])
-async def update_mine(
-    mine_id: int,
-    body: MineUpdate,
-    tenant_id: int = Depends(get_tenant_id),
-    session: AsyncSession = Depends(get_async_session),
-):
-    """编辑矿井"""
-    svc = MineService(session)
-    mine = await svc.update_mine(mine_id, tenant_id, body)
-    if not mine:
-        raise HTTPException(status_code=404, detail="矿井不存在")
-    await session.commit()
-    return ApiResponse(data=MineOut.model_validate(mine))
-
-
-@router.delete("/mines/{mine_id}", response_model=ApiResponse)
-async def delete_mine(
-    mine_id: int,
-    tenant_id: int = Depends(get_tenant_id),
-    session: AsyncSession = Depends(get_async_session),
-):
-    """删除矿井"""
-    svc = MineService(session)
-    ok = await svc.delete_mine(mine_id, tenant_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="矿井不存在")
-    await session.commit()
-    return ApiResponse(message="删除成功")
 
 
 # ==================== 操作日志 ====================

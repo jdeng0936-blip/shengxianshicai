@@ -1,7 +1,7 @@
 """
 系统管理 Pydantic V2 Schema
 
-覆盖用户、角色、矿井、操作日志、数据字典五个子模块。
+覆盖用户、角色、操作日志、数据字典四个子模块。
 """
 from typing import Optional
 from datetime import datetime
@@ -65,42 +65,6 @@ class RoleOut(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
-    created_at: Optional[datetime] = None
-
-
-# ========== 矿井配置 ==========
-
-class MineCreate(BaseModel):
-    """新增矿井"""
-    name: str
-    company: Optional[str] = None
-    gas_level: Optional[str] = None
-    address: Optional[str] = None
-    contact: Optional[str] = None
-    phone: Optional[str] = None
-
-
-class MineUpdate(BaseModel):
-    """编辑矿井"""
-    name: Optional[str] = None
-    company: Optional[str] = None
-    gas_level: Optional[str] = None
-    address: Optional[str] = None
-    contact: Optional[str] = None
-    phone: Optional[str] = None
-
-
-class MineOut(BaseModel):
-    """矿井输出"""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    company: Optional[str] = None
-    gas_level: Optional[str] = None
-    address: Optional[str] = None
-    contact: Optional[str] = None
-    phone: Optional[str] = None
     created_at: Optional[datetime] = None
 
 

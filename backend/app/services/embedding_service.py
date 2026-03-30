@@ -16,7 +16,16 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # ========== 配置 ==========
-EMBED_MODEL = "gemini-embedding-001"
+# 从 llm_registry.yaml 的 embedding task 读取模型名（架构红线：禁止硬编码模型名）
+from app.core.llm_selector import LLMSelector
+
+def _get_embed_model() -> str:
+    """获取 embedding 模型名，支持热更新"""
+    try:
+        return LLMSelector.get_model("embedding")
+    except (KeyError, ValueError):
+        return "gemini-embedding-001"  # fallback 默认值
+
 DIMENSION = 1536
 
 
@@ -34,7 +43,7 @@ class EmbeddingService:
             return None
         try:
             result = self._client.models.embed_content(
-                model=EMBED_MODEL,
+                model=_get_embed_model(),
                 contents=[content],
                 config={"output_dimensionality": DIMENSION},
             )
@@ -49,7 +58,7 @@ class EmbeddingService:
             return [None] * len(texts)
         try:
             result = self._client.models.embed_content(
-                model=EMBED_MODEL,
+                model=_get_embed_model(),
                 contents=texts,
                 config={"output_dimensionality": DIMENSION},
             )

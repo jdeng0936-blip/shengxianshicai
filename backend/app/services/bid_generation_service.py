@@ -25,6 +25,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.prompt_manager import prompt_manager
+from app.core.llm_selector import LLMSelector
 from app.models.bid_project import BidProject, BidChapter, BidProjectStatus
 from app.models.enterprise import Enterprise
 from app.models.image_asset import ImageAsset
@@ -34,16 +35,6 @@ from app.services.bid_chapter_engine import (
     build_chapter_outline,
 )
 from app.services.bid_project_service import BidProjectService
-
-
-def _load_llm_task_config(task_name: str) -> dict:
-    registry_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "llm_registry.yaml",
-    )
-    with open(registry_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return data.get("tasks", {}).get(task_name, {})
 
 
 def _build_enterprise_info(enterprise: Enterprise) -> str:
@@ -109,7 +100,7 @@ class BidGenerationService:
 
     async def _get_llm_client(self) -> tuple[AsyncOpenAI, str]:
         """获取 LLM 客户端和模型名"""
-        task_config = _load_llm_task_config("bid_section_generate")
+        task_config = LLMSelector.get_config("bid_section_generate")
         model = (task_config.get("models") or [settings.AI_MODEL])[0]
         client = AsyncOpenAI(
             api_key=settings.OPENAI_API_KEY,
@@ -271,7 +262,7 @@ class BidGenerationService:
 
         # 调用 LLM
         client, model = await self._get_llm_client()
-        task_config = _load_llm_task_config("bid_section_generate")
+        task_config = LLMSelector.get_config("bid_section_generate")
 
         prompt = prompt_manager.format_prompt(
             "bid_generation", "v2_with_images",
@@ -294,12 +285,28 @@ class BidGenerationService:
 
         content = response.choices[0].message.content or ""
 
+        # ===== Critic 质量闭环（架构红线：AI 生成必须过 Critic） =====
+        from app.services.bid_critic_service import BidCriticService
+
+        critic = BidCriticService()
+        chapter_meta = {
+            "name": chapter.name,
+            "chapter_no": chapter.chapter_no,
+            "requirements": [r.content for r in project.requirements] if project.requirements else [],
+        }
+        content, critic_meta = await critic.critic_and_rewrite(
+            content, chapter_meta, enterprise
+        )
+
         # 更新章节
         chapter.content = content
         chapter.source = "ai"
         chapter.status = "generated"
         chapter.ai_model_used = model
         chapter.ai_prompt_version = "v2_with_images"
+        # 记录 Critic 审查元数据
+        if hasattr(chapter, "meta") and isinstance(chapter.meta, dict):
+            chapter.meta["critic"] = critic_meta
         await self.session.commit()
         await self.session.refresh(chapter)
 

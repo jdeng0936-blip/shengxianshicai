@@ -163,11 +163,13 @@ class AIRouter:
     """AI 智能路由引擎"""
 
     def __init__(self, session: Optional[AsyncSession] = None, tenant_id: int = 0, industry_type: str = "fresh_food"):
-        # 优先使用 OpenAI，兼容 Gemini（通过 OpenAI 兼容 API）
+        # 通过 LLMSelector 获取 tool_calling 任务的模型配置（架构红线：禁止硬编码模型名）
         from app.core.config import settings
+        from app.core.llm_selector import LLMSelector
+
         api_key = settings.OPENAI_API_KEY or settings.GEMINI_API_KEY
         base_url = settings.OPENAI_BASE_URL or None
-        self.model = settings.AI_MODEL
+        self.model = LLMSelector.get_model("tool_calling")
         self.session = session  # 数据库 session（用于向量检索）
         self.tenant_id = tenant_id
         self.industry_type = industry_type

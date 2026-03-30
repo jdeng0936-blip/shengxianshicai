@@ -13,7 +13,7 @@ class ChatSessionItem(BaseModel):
     id: int
     title: Optional[str] = None
     project_id: Optional[int] = None
-    industry_type: str = "coal_excavation"
+    industry_type: str = "fresh_food"
     is_archived: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -25,7 +25,7 @@ class ChatSessionItem(BaseModel):
 class ChatSessionCreate(BaseModel):
     """创建新会话"""
     project_id: Optional[int] = Field(None, description="关联项目ID")
-    industry_type: str = Field("coal_excavation", description="行业类型")
+    industry_type: str = Field("fresh_food", description="行业类型")
     title: Optional[str] = Field(None, max_length=200, description="会话标题")
 
 
@@ -48,4 +48,4 @@ class ChatWithSessionRequest(BaseModel):
     message: str = Field(min_length=1, description="用户输入")
     project_id: Optional[int] = Field(None, description="关联项目ID（仅新建会话时生效）")
     stream: bool = Field(default=True, description="是否 SSE 流式输出")
-    industry_type: str = Field("coal_excavation", description="行业类型")
+    industry_type: str = Field("fresh_food", description="行业类型")
