@@ -218,12 +218,19 @@ export default function BidProjectDetailPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-slate-500">配送范围</div>
-            <div className="mt-1 text-sm truncate">{project.delivery_scope || "—"}</div>
-          </CardContent>
-        </Card>
+        <Link href={`/dashboard/bid-projects/${project.id}/enterprise`}>
+          <Card className="cursor-pointer transition-shadow hover:shadow-md">
+            <CardContent className="pt-4">
+              <div className="text-sm text-slate-500">投标企业</div>
+              <div className="mt-1 text-xl font-bold">
+                {project.enterprise_id ? "已关联" : "未关联"}
+              </div>
+              <div className="mt-1 text-xs text-blue-500">
+                {project.enterprise_id ? "查看/编辑企业信息 →" : "点击关联企业 →"}
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
         <Card>
           <CardContent className="pt-4">
             <div className="text-sm text-slate-500">招标要求</div>
