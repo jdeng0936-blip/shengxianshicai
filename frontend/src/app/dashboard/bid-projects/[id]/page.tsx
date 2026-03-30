@@ -209,7 +209,7 @@ export default function BidProjectDetailPage() {
       </div>
 
       {/* 项目概览 */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
         <Card>
           <CardContent className="pt-4">
             <div className="text-sm text-slate-500">预算金额</div>
@@ -232,12 +232,23 @@ export default function BidProjectDetailPage() {
         </Card>
         <Link href={`/dashboard/bid-projects/${project.id}/chapters`}>
           <Card className="cursor-pointer transition-shadow hover:shadow-md">
-          <CardContent className="pt-4">
-            <div className="text-sm text-slate-500">投标章节</div>
-            <div className="mt-1 text-xl font-bold">{project.chapters.length} 章</div>
-            <div className="mt-1 text-xs text-blue-500">点击进入编辑 &rarr;</div>
-          </CardContent>
-        </Card>
+            <CardContent className="pt-4">
+              <div className="text-sm text-slate-500">投标章节</div>
+              <div className="mt-1 text-xl font-bold">{project.chapters.length} 章</div>
+              <div className="mt-1 text-xs text-blue-500">点击进入编辑 &rarr;</div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href={`/dashboard/bid-projects/${project.id}/quotation`}>
+          <Card className="cursor-pointer transition-shadow hover:shadow-md">
+            <CardContent className="pt-4">
+              <div className="text-sm text-slate-500">报价管理</div>
+              <div className="mt-1 text-xl font-bold">
+                {project.bid_amount ? `¥${(project.bid_amount / 10000).toFixed(1)}万` : "待报价"}
+              </div>
+              <div className="mt-1 text-xs text-blue-500">点击编辑报价 &rarr;</div>
+            </CardContent>
+          </Card>
         </Link>
       </div>
 

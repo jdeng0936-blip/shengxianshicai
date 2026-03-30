@@ -21,6 +21,8 @@ from app.services.tender_parser import TenderParseService
 from app.services.bid_generation_service import BidGenerationService
 from app.services.bid_doc_exporter import BidDocExporter
 from app.services.bid_compliance_service import BidComplianceService
+from app.services.bid_quotation_service import BidQuotationService
+from app.schemas.quotation import QuotationSheetOut
 
 router = APIRouter(prefix="/bid-projects", tags=["投标项目"])
 
@@ -469,3 +471,25 @@ async def compliance_check(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"合规检查失败: {str(e)}")
+
+
+# ========== 报价单自动初始化 ==========
+
+@router.post("/{project_id}/init-quotation", response_model=ApiResponse[QuotationSheetOut])
+async def init_quotation(
+    project_id: int,
+    discount_rate: float | None = None,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """根据招标要求自动初始化报价单（预填六大品类常见食材 + 参考价）"""
+    user_id = int(payload.get("sub", 0))
+    svc = BidQuotationService(session)
+    try:
+        sheet = await svc.init_quotation(project_id, tenant_id, user_id, discount_rate)
+        return ApiResponse(data=QuotationSheetOut.model_validate(sheet))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"报价单初始化失败: {str(e)}")
