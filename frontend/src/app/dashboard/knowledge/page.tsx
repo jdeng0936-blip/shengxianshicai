@@ -29,9 +29,9 @@ type Tab = (typeof TABS)[number]["key"];
 interface Case {
   id: number;
   title: string;
-  mine_name?: string;
-  excavation_type?: string;
-  rock_class?: string;
+  buyer_name?: string;
+  discount_rate?: string;
+  customer_type?: string;
   summary?: string;
 }
 interface Snippet {
@@ -75,9 +75,10 @@ export default function KnowledgePage() {
   // 案例表单 — 仅 title 必填，其余 Optional（契合 EngCaseCreate Schema）
   const [caseForm, setCaseForm] = useState({
     title: "",
-    mine_name: "",
-    excavation_type: "",
-    rock_class: "III",
+    buyer_name: "",
+    bid_amount: "",
+    discount_rate: "",
+    customer_type: "",
     summary: "",
   });
 
@@ -146,13 +147,13 @@ export default function KnowledgePage() {
     try {
       // 构造 payload，过滤空字符串为 null（契合 Optional 字段）
       const payload: Record<string, any> = { title: caseForm.title.trim() };
-      if (caseForm.mine_name.trim()) payload.mine_name = caseForm.mine_name.trim();
-      if (caseForm.excavation_type.trim()) payload.excavation_type = caseForm.excavation_type.trim();
-      if (caseForm.rock_class.trim()) payload.rock_class = caseForm.rock_class.trim();
+      if (caseForm.buyer_name.trim()) payload.buyer_name = caseForm.buyer_name.trim();
+      if (caseForm.discount_rate.trim()) payload.discount_rate = caseForm.discount_rate.trim();
+      if (caseForm.customer_type.trim()) payload.customer_type = caseForm.customer_type.trim();
       if (caseForm.summary.trim()) payload.summary = caseForm.summary.trim();
 
       await api.post("/knowledge/cases", payload);
-      setCaseForm({ title: "", mine_name: "", excavation_type: "", rock_class: "III", summary: "" });
+      setCaseForm({ title: "", buyer_name: "", bid_amount: "", discount_rate: "", customer_type: "", summary: "" });
       setShowCreate(false);
       fetchData();
     } catch (e: any) {
@@ -262,7 +263,7 @@ export default function KnowledgePage() {
           <CardContent className="space-y-4">
             <div className="flex gap-2">
               <Input
-                placeholder="例如：突出矿井通风要求、高瓦斯支护标准、应急救援预案..."
+                placeholder="例如：冷链运输温度要求、食品留样制度、学校食堂管理规定..."
                 value={semanticQuery}
                 onChange={(e) => setSemanticQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSemanticSearch()}
@@ -312,21 +313,21 @@ export default function KnowledgePage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-xs font-medium">案例标题 <span className="text-red-500">*</span></label>
-                <Input value={caseForm.title} onChange={(e) => setCaseForm({ ...caseForm, title: e.target.value })} placeholder="如：龙固3301回风巷" />
+                <Input value={caseForm.title} onChange={(e) => setCaseForm({ ...caseForm, title: e.target.value })} placeholder="如：XX市第一中学食材配送项目" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">矿井名称</label>
-                <Input value={caseForm.mine_name} onChange={(e) => setCaseForm({ ...caseForm, mine_name: e.target.value })} placeholder="矿井名称" />
+                <label className="mb-1 block text-xs font-medium">采购方</label>
+                <Input value={caseForm.buyer_name} onChange={(e) => setCaseForm({ ...caseForm, buyer_name: e.target.value })} placeholder="采购方名称" />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium">围岩级别</label>
-                <Input value={caseForm.rock_class} onChange={(e) => setCaseForm({ ...caseForm, rock_class: e.target.value })} placeholder="III" />
+                <label className="mb-1 block text-xs font-medium">客户类型</label>
+                <Input value={caseForm.customer_type} onChange={(e) => setCaseForm({ ...caseForm, customer_type: e.target.value })} placeholder="school/hospital/government" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">掘进类型</label>
-                <Input value={caseForm.excavation_type} onChange={(e) => setCaseForm({ ...caseForm, excavation_type: e.target.value })} placeholder="如：半煤岩巷" />
+                <label className="mb-1 block text-xs font-medium">中标金额</label>
+                <Input value={caseForm.bid_amount} onChange={(e) => setCaseForm({ ...caseForm, bid_amount: e.target.value })} placeholder="如：50万" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">摘要</label>
@@ -354,7 +355,7 @@ export default function KnowledgePage() {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">章节名称 <span className="text-red-500">*</span></label>
-                <Input value={snippetForm.chapter_name} onChange={(e) => setSnippetForm({ ...snippetForm, chapter_name: e.target.value })} placeholder="如：顶板管理" />
+                <Input value={snippetForm.chapter_name} onChange={(e) => setSnippetForm({ ...snippetForm, chapter_name: e.target.value })} placeholder="如：食材验收管理" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">排序权重</label>
@@ -388,7 +389,7 @@ export default function KnowledgePage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-xs font-medium">模板名称 <span className="text-red-500">*</span></label>
-                <Input value={templateForm.name} onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })} placeholder="如：掘进作业规程标准模板" />
+                <Input value={templateForm.name} onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })} placeholder="如：学校食堂配送投标文件模板" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">模板文件地址 <span className="text-red-500">*</span></label>
@@ -453,9 +454,9 @@ export default function KnowledgePage() {
                       </CardHeader>
                       <CardContent>
                         <div className="mb-2 grid grid-cols-3 gap-2 text-xs text-slate-500">
-                          <div>矿井：<span className="font-medium text-slate-700">{c.mine_name || "—"}</span></div>
-                          <div>围岩：<span className="font-medium text-slate-700">{c.rock_class || "—"}类</span></div>
-                          <div>类型：<span className="font-medium text-slate-700">{c.excavation_type || "—"}</span></div>
+                          <div>采购方：<span className="font-medium text-slate-700">{c.buyer_name || "—"}</span></div>
+                          <div>客户：<span className="font-medium text-slate-700">{c.customer_type || "—"}</span></div>
+                          <div>下浮率：<span className="font-medium text-slate-700">{c.discount_rate || "—"}</span></div>
                         </div>
                         <p className="text-sm text-slate-600">{c.summary || "暂无摘要"}</p>
                       </CardContent>

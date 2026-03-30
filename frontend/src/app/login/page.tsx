@@ -4,7 +4,7 @@ import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, Pickaxe, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Sparkles, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
@@ -66,10 +66,10 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="flex flex-col items-center gap-2">
           <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-600 shadow-lg">
-            <Pickaxe className="h-7 w-7 text-white" />
+            <Sparkles className="h-7 w-7 text-white" />
           </div>
-          <h1 className="text-xl font-bold text-white">规程智能平台</h1>
-          <p className="text-sm text-slate-400">煤矿掘进工作面作业规程智能生成系统</p>
+          <h1 className="text-xl font-bold text-white">鲜标智投</h1>
+          <p className="text-sm text-slate-400">生鲜食材配送投标文件智能生成平台</p>
         </div>
 
         {/* 表单 */}

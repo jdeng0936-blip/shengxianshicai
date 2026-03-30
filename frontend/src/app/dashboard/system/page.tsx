@@ -44,7 +44,7 @@ interface ModuleInfo {
 const MODULES: ModuleInfo[] = [
   { key: "users", label: "用户管理", desc: "系统用户的增删改查、密码重置", icon: Users },
   { key: "roles", label: "角色权限", desc: "角色定义与权限矩阵配置", icon: Shield },
-  { key: "mines", label: "矿井配置", desc: "矿井基础信息、参数模板管理", icon: Building2 },
+  { key: "mines", label: "企业配置", desc: "投标企业基础信息管理", icon: Building2 },
   { key: "logs", label: "操作日志", desc: "系统操作审计日志查询", icon: FileText },
   { key: "dicts", label: "数据字典", desc: "业务下拉选项数据源管理", icon: BookOpen },
 ];
@@ -58,7 +58,7 @@ export default function SystemPage() {
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 dark:text-white">系统管理</h2>
-          <p className="mt-1 text-sm text-slate-500">用户管理 · 角色权限 · 矿井配置 · 操作日志 · 数据字典</p>
+          <p className="mt-1 text-sm text-slate-500">用户管理 · 角色权限 · 企业配置 · 操作日志 · 数据字典</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {MODULES.map((mod) => (

@@ -18,10 +18,10 @@ export default function DashboardLayout({
         {/* 顶栏 */}
         <header className="flex h-14 items-center justify-between border-b bg-white px-6 dark:bg-slate-950">
           <h1 className="text-sm font-medium text-slate-600">
-            煤矿掘进工作面作业规程智能生成平台
+            鲜标智投 — 生鲜食材配送投标文件智能生成平台
           </h1>
           <div className="flex items-center gap-4 text-sm text-slate-500">
-            <span>华阳集团 · 国辰公司</span>
+            <span>智能投标 · 精准报价</span>
           </div>
         </header>
 
