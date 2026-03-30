@@ -493,3 +493,70 @@ async def init_quotation(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"报价单初始化失败: {str(e)}")
+
+
+# ========== AI 选段重写 ==========
+
+from pydantic import BaseModel as _BaseModel, Field as _Field
+
+
+class RewriteRequest(_BaseModel):
+    text: str = _Field(min_length=1, description="选中的文本")
+    action: str = _Field("polish", description="操作: polish/expand/condense/rewrite")
+    context: str | None = _Field(None, description="章节标题等上下文")
+
+
+@router.post("/{project_id}/rewrite-selection", response_model=ApiResponse)
+async def rewrite_selection(
+    project_id: int,
+    body: RewriteRequest,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """AI 重写选中文本（润色/扩写/精简/重写）"""
+    from openai import AsyncOpenAI
+    from app.core.llm_selector import LLMSelector
+
+    action_prompts = {
+        "polish": "请润色以下投标文件段落，使其更专业、更通顺，保持原意不变：",
+        "expand": "请扩写以下投标文件段落，补充具体细节、数据和措施，使内容更充实（扩展到原文2倍左右）：",
+        "condense": "请精简以下投标文件段落，去除冗余表述，保留核心要点，压缩到原文50%左右：",
+        "rewrite": "请重写以下投标文件段落，保持主题不变但换一种更有说服力的表达方式：",
+    }
+
+    prompt_prefix = action_prompts.get(body.action, action_prompts["polish"])
+    context_hint = f"\n\n所属章节：{body.context}" if body.context else ""
+
+    prompt = f"""{prompt_prefix}{context_hint}
+
+---
+{body.text}
+---
+
+要求：
+- 使用专业的投标文件用语
+- 输出纯文本，不要加任何解释说明
+- 保持 Markdown 格式（如有标题、列表等）"""
+
+    try:
+        model = LLMSelector.get_model("bid_section_generate")
+        client = AsyncOpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_BASE_URL or None,
+        )
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            max_tokens=4096,
+        )
+        result_text = response.choices[0].message.content or ""
+        return ApiResponse(data={
+            "original": body.text,
+            "rewritten": result_text,
+            "action": body.action,
+            "model": model,
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 重写失败: {str(e)}")

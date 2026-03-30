@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import MarkdownEditor from "@/components/business/markdown-editor";
 import {
   ArrowLeft,
   Loader2,
@@ -54,6 +54,8 @@ export default function ChaptersEditorPage() {
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState<{ completed: number; total: number; failed: number } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [selection, setSelection] = useState<{ text: string; start: number; end: number } | null>(null);
+  const [rewriting, setRewriting] = useState(false);
 
   const fetchChapters = useCallback(async () => {
     try {
@@ -220,6 +222,32 @@ export default function ChaptersEditorPage() {
     }
   };
 
+  const handleRewrite = async (action: "polish" | "expand" | "condense" | "rewrite") => {
+    if (!selection || !selectedChapter) return;
+    setRewriting(true);
+    try {
+      const res = await api.post(`/bid-projects/${projectId}/rewrite-selection`, {
+        text: selection.text,
+        action,
+        context: `${selectedChapter.chapter_no} ${selectedChapter.title}`,
+      });
+      const rewritten = res.data?.data?.rewritten;
+      if (rewritten) {
+        // 替换选中部分
+        const newContent =
+          editContent.slice(0, selection.start) +
+          rewritten +
+          editContent.slice(selection.end);
+        setEditContent(newContent);
+        setSelection(null);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "AI 重写失败");
+    } finally {
+      setRewriting(false);
+    }
+  };
+
   const selectedChapter = chapters.find((ch) => ch.id === selectedId);
 
   if (loading && chapters.length === 0) {
@@ -358,6 +386,22 @@ export default function ChaptersEditorPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {/* AI 划词重写按钮组 — 选中文本时显示 */}
+                      {selection && (
+                        <div className="flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1">
+                          {rewriting ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                          ) : (
+                            <>
+                              <span className="mr-1 text-xs text-blue-600">AI:</span>
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => handleRewrite("polish")}>润色</Button>
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => handleRewrite("expand")}>扩写</Button>
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => handleRewrite("condense")}>精简</Button>
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => handleRewrite("rewrite")}>重写</Button>
+                            </>
+                          )}
+                        </div>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -383,11 +427,11 @@ export default function ChaptersEditorPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="flex-1 overflow-hidden p-0">
-                  <Textarea
-                    className="h-full w-full resize-none rounded-none border-0 p-4 font-mono text-sm focus-visible:ring-0"
-                    placeholder="章节内容为空，点击「AI 生成」开始..."
+                  <MarkdownEditor
                     value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
+                    onChange={setEditContent}
+                    placeholder="章节内容为空，点击「AI 生成」开始..."
+                    onSelectionChange={setSelection}
                   />
                 </CardContent>
               </>
