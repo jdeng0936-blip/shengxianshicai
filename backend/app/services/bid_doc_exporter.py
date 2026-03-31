@@ -58,6 +58,7 @@ _CLAUSE_TITLE_RE = re.compile(r'^第[一二三四五六七八九十百\d]+条')
 _SUB_ITEM_RE = re.compile(r'^(\d{1,2}[\.、]|（[一二三四五六七八九十]）)')
 _SUB_CLAUSE_RE = re.compile(r'^(（\d+）|\(\d+\)|[①②③④⑤⑥⑦⑧⑨⑩])')
 _HEADING_RE = re.compile(r'^#{1,4}\s+')
+_IMG_MARKER_RE = re.compile(r'\[\[IMG:(\d+):(.+?)\]\]')
 
 
 class BidDocExporter:
@@ -88,7 +89,10 @@ class BidDocExporter:
         credentials = await self._load_credentials(project.enterprise_id, tenant_id) if enterprise else []
         quotation = await self._load_latest_quotation(project_id, tenant_id)
 
-        # 2. 渲染 Word
+        # 2. 预加载图片
+        await self._preload_images(project.enterprise_id, tenant_id)
+
+        # 3. 渲染 Word
         file_path = self._render_docx(project, enterprise, credentials, quotation)
 
         # 3. 更新项目的投标文件路径
@@ -134,6 +138,47 @@ class BidDocExporter:
 
     # ========== Word 渲染 ==========
 
+    async def _preload_images(self, enterprise_id: Optional[int], tenant_id: int):
+        """预加载项目图片到缓存"""
+        self._image_cache = {}
+        if not enterprise_id:
+            return
+        from app.models.image_asset import ImageAsset
+        result = await self.session.execute(
+            select(ImageAsset).where(
+                ImageAsset.enterprise_id == enterprise_id,
+                ImageAsset.tenant_id == tenant_id,
+            )
+        )
+        for img in result.scalars().all():
+            self._image_cache[img.id] = img
+
+    def _insert_image(self, doc: Document, image_id: int, caption: str):
+        """插入图片到 Word，找不到则降级为文字占位"""
+        image = self._image_cache.get(image_id)
+        if not image or not os.path.exists(image.file_path):
+            p = doc.add_paragraph()
+            run = p.add_run(f"[图片暂缺: {caption}]")
+            run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+            run.font.size = Pt(10)
+            return
+
+        try:
+            doc.add_picture(image.file_path, width=Inches(4.5))
+        except Exception:
+            p = doc.add_paragraph()
+            run = p.add_run(f"[图片加载失败: {caption}]")
+            run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+            run.font.size = Pt(10)
+            return
+
+        # 图注
+        p = doc.add_paragraph()
+        p.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        run = p.add_run(caption)
+        run.font.size = Pt(10)
+        run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+
     def _render_docx(
         self,
         project: BidProject,
@@ -144,6 +189,7 @@ class BidDocExporter:
     ) -> str:
         doc = Document()
         self._setup_styles(doc)
+        self._project_name = project.project_name
 
         # 页眉页脚
         self._setup_header_footer(doc, project, enterprise, watermark)
@@ -529,6 +575,14 @@ class BidDocExporter:
         for line in content.split("\n"):
             stripped = line.strip()
             if not stripped:
+                continue
+
+            # [[IMG:图片ID:说明文字]] → 插入图片
+            img_match = _IMG_MARKER_RE.match(stripped)
+            if img_match:
+                image_id = int(img_match.group(1))
+                caption = img_match.group(2)
+                self._insert_image(doc, image_id, caption)
                 continue
 
             # Markdown 标题 → Word heading

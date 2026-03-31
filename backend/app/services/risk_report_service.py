@@ -88,7 +88,10 @@ class RiskReportService:
         # 3. 章节内容风险
         risks.extend(self._check_chapter_risks(project))
 
-        # 4. 报价风险
+        # 4. 评分覆盖检查
+        risks.extend(self._check_scoring_coverage(project))
+
+        # 5. 报价风险
         quotation = await self._load_latest_quotation(project_id, tenant_id)
         risks.extend(self._check_quotation_risks(project, quotation))
 
@@ -172,25 +175,48 @@ class RiskReportService:
                 suggestion="请在企业信息页补充许可证号",
             ))
 
-        # 资质到期检查
+        # 资质到期检查（含投标截止日比对）
+        project_deadline = None
+        if project.deadline:
+            try:
+                project_deadline = datetime.strptime(project.deadline[:10], "%Y-%m-%d")
+            except (ValueError, TypeError):
+                pass
+
         for cred in credentials:
             if cred.expiry_date and not cred.is_permanent:
                 try:
                     expiry = datetime.strptime(cred.expiry_date, "%Y-%m-%d")
-                    days_left = (expiry - datetime.now()).days
+                    now = datetime.now()
+                    days_left = (expiry - now).days
+
                     if days_left < 0:
+                        # 已过期 → Fatal
                         risks.append(RiskItem(
                             level="fatal", category="资质证书",
                             title=f"证书已过期: {cred.cred_name}",
                             detail=f"过期日期: {cred.expiry_date}，已过期 {abs(days_left)} 天",
                             suggestion="请更新证书或联系发证机关续期",
                         ))
+                    elif project_deadline and expiry < project_deadline:
+                        # 今天还有效但投标截止日前会过期 → Fatal
+                        days_to_expire = (expiry - now).days
+                        days_to_deadline = (project_deadline - now).days
+                        risks.append(RiskItem(
+                            level="fatal", category="资质证书",
+                            title=f"证书将在投标截止日前过期: {cred.cred_name}",
+                            detail=f"证书到期日 {cred.expiry_date}（剩余 {days_to_expire} 天），"
+                                   f"投标截止日 {project.deadline[:10]}（剩余 {days_to_deadline} 天）。"
+                                   f"评标时该资质已失效，将被判定资格不合格。",
+                            suggestion="请立即联系发证机关办理续期，确保证书在投标截止日后仍有效",
+                        ))
                     elif days_left < settings.CREDENTIAL_EXPIRY_WARN_DAYS:
+                        # 即将到期（但不影响本次投标）→ Advice
                         risks.append(RiskItem(
                             level="advice", category="资质证书",
                             title=f"证书即将到期: {cred.cred_name}",
                             detail=f"将于 {cred.expiry_date} 到期（剩余 {days_left} 天）",
-                            suggestion="建议提前续期，避免投标期间证书失效",
+                            suggestion="建议提前续期，避免后续投标时证书失效",
                         ))
                 except ValueError:
                     pass
@@ -231,6 +257,65 @@ class RiskReportService:
                 detail=f"需要 AI 生成的章节仍为草稿状态",
                 suggestion="请点击「一键生成全部」",
             ))
+
+        return risks
+
+    def _check_scoring_coverage(self, project: BidProject) -> list[RiskItem]:
+        """评分覆盖逐条检查 — 评分矩阵子项 vs 章节内容关键词匹配"""
+        import re
+
+        risks = []
+
+        # 提取评分类需求
+        scoring_reqs = [r for r in project.requirements if r.category == "scoring"]
+        if not scoring_reqs or not project.chapters:
+            return risks
+
+        # 合并所有章节内容为全文（用于关键词搜索）
+        all_content = "\n".join(ch.content or "" for ch in project.chapters)
+        if not all_content.strip():
+            return risks
+
+        for req in scoring_reqs:
+            content_text = req.content or ""
+            if not content_text.strip():
+                continue
+
+            # 从评分项描述中提取关键词（取前 3-5 个有意义的词）
+            # 去除常见停用词和标点
+            clean = re.sub(r'[，。、；：""''（）\(\)\[\]【】\d\s]+', ' ', content_text)
+            words = [w for w in clean.split() if len(w) >= 2]
+            keywords = words[:5] if words else [content_text[:10]]
+
+            # 在全文中匹配关键词（至少匹配到 1 个算覆盖）
+            matched = any(kw in all_content for kw in keywords)
+
+            if not matched:
+                # 判定严重程度
+                max_score = req.max_score or 0
+                is_mandatory = req.is_mandatory
+
+                if is_mandatory:
+                    level = "fatal"
+                    title_prefix = "废标级评分项未响应"
+                elif max_score >= 10:
+                    level = "serious"
+                    title_prefix = "高分评分项未响应"
+                elif max_score >= 5:
+                    level = "serious"
+                    title_prefix = "评分项未响应"
+                else:
+                    level = "advice"
+                    title_prefix = "低分评分项未响应"
+
+                score_info = f"（{max_score}分）" if max_score else ""
+                risks.append(RiskItem(
+                    level=level,
+                    category="评分覆盖",
+                    title=f"{title_prefix}: {content_text[:40]}{score_info}",
+                    detail=f"评分项: {content_text}\n关键词: {', '.join(keywords)}\n在投标章节中未找到对应响应内容",
+                    suggestion="请在相关章节中补充对该评分项的明确响应",
+                ))
 
         return risks
 

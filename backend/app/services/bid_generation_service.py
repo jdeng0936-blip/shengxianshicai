@@ -37,8 +37,8 @@ from app.services.bid_chapter_engine import (
 from app.services.bid_project_service import BidProjectService
 
 
-def _build_enterprise_info(enterprise: Enterprise) -> str:
-    """构建企业信息文本块"""
+def _build_enterprise_info(enterprise: Enterprise, credentials: list = None) -> str:
+    """构建企业信息文本块（含资质编号，防止 LLM 编造）"""
     lines = [f"企业名称：{enterprise.name}"]
     if enterprise.credit_code:
         lines.append(f"统一社会信用代码：{enterprise.credit_code}")
@@ -76,6 +76,21 @@ def _build_enterprise_info(enterprise: Enterprise) -> str:
 
     if enterprise.competitive_advantages:
         lines.append(f"\n核心竞争优势：\n{enterprise.competitive_advantages}")
+
+    # 资质证书清单（编号必须原样使用，严禁编造）
+    if credentials:
+        lines.append("\n== 企业资质证书清单（以下编号必须原样引用，严禁修改或编造）==")
+        for cred in credentials:
+            parts = [cred.cred_name]
+            if cred.cred_no:
+                parts.append(f"编号: {cred.cred_no}")
+            if cred.expiry_date:
+                parts.append(f"有效期至: {cred.expiry_date}")
+            elif cred.is_permanent:
+                parts.append("长期有效")
+            if cred.issuing_authority:
+                parts.append(f"发证机关: {cred.issuing_authority}")
+            lines.append(f"- {'，'.join(parts)}")
 
     return "\n".join(lines)
 
@@ -141,9 +156,13 @@ class BidGenerationService:
 
             lines = []
             for r in results:
-                title = r.get("title", "")
-                content = r.get("content", "")[:500]
-                lines.append(f"【{title}】{content}")
+                title = r.get("doc_title", r.get("title", ""))
+                clause_no = r.get("clause_no", "")
+                content = r.get("content", "")[:1500]
+                prefix = f"【{title}】" if title else ""
+                if clause_no:
+                    prefix += f"{clause_no} "
+                lines.append(f"{prefix}{content}")
             return "\n\n".join(lines)
         except Exception as e:
             return f"知识库检索暂不可用: {str(e)}"
@@ -222,15 +241,23 @@ class BidGenerationService:
         if chapter.source not in ("ai", "draft", "template"):
             return chapter
 
-        # 加载企业信息
+        # 加载企业信息 + 资质证书
         enterprise_info = "企业信息未填写"
         if project.enterprise_id:
+            from app.models.credential import Credential
             result = await self.session.execute(
                 select(Enterprise).where(Enterprise.id == project.enterprise_id)
             )
             enterprise = result.scalar_one_or_none()
             if enterprise:
-                enterprise_info = _build_enterprise_info(enterprise)
+                cred_result = await self.session.execute(
+                    select(Credential).where(
+                        Credential.enterprise_id == enterprise.id,
+                        Credential.tenant_id == tenant_id,
+                    )
+                )
+                creds = list(cred_result.scalars().all())
+                enterprise_info = _build_enterprise_info(enterprise, creds)
 
         # 映射评分标准到章节
         requirements = [

@@ -28,6 +28,40 @@ from app.schemas.quotation import QuotationSheetOut
 router = APIRouter(prefix="/bid-projects", tags=["投标项目"])
 
 
+# ========== Dashboard 统计 ==========
+
+@router.get("/dashboard/stats", response_model=ApiResponse)
+async def dashboard_stats(
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Dashboard 聚合统计（服务端计算，避免前端全量拉取）"""
+    from sqlalchemy import select as sa_select, func, case
+    from app.models.bid_project import BidProject
+
+    q = sa_select(
+        func.count().label("total"),
+        func.sum(case((BidProject.status.in_(["parsing", "parsed", "generating", "generated", "reviewing"]), 1), else_=0)).label("in_progress"),
+        func.sum(case((BidProject.status.in_(["completed", "submitted", "won"]), 1), else_=0)).label("completed"),
+        func.sum(case((BidProject.status == "won", 1), else_=0)).label("won"),
+        func.sum(case((BidProject.status == "lost", 1), else_=0)).label("lost"),
+        func.coalesce(func.sum(BidProject.budget_amount), 0).label("total_budget"),
+    ).where(BidProject.tenant_id == tenant_id)
+
+    result = await session.execute(q)
+    row = result.one()
+
+    return ApiResponse(data={
+        "total": row.total or 0,
+        "in_progress": int(row.in_progress or 0),
+        "completed": int(row.completed or 0),
+        "won": int(row.won or 0),
+        "lost": int(row.lost or 0),
+        "total_budget": float(row.total_budget or 0),
+    })
+
+
 # ========== BidProject CRUD ==========
 
 @router.get("", response_model=ApiResponse[list[BidProjectListOut]])
@@ -96,6 +130,80 @@ async def delete_project(
     if not ok:
         raise HTTPException(status_code=404, detail="投标项目不存在")
     return ApiResponse(data={"deleted": True})
+
+
+# ========== 招标文件预览解析（新建项目时使用） ==========
+
+@router.post("/preview-tender", response_model=ApiResponse)
+async def preview_tender(
+    file: UploadFile = File(..., description="招标文件（PDF/DOCX/DOC）"),
+    payload: dict = Depends(get_current_user_payload),
+):
+    """
+    上传招标文件并快速提取基本项目信息（不创建项目、不入库）。
+    用于新建项目时自动填充表单。
+    """
+    try:
+        # 保存到临时目录
+        temp_path, filename = await TenderParseService.save_temp_file(file)
+
+        # 预览解析：仅提取基本信息
+        result = await TenderParseService.preview_parse(temp_path, filename)
+
+        return ApiResponse(data={
+            **result,
+            "temp_file_path": temp_path,
+            "filename": filename,
+        })
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"招标文件预览解析失败: {str(e)}")
+
+
+# ========== 关联预览时上传的招标文件 ==========
+
+from pydantic import BaseModel as _PydanticBase
+
+
+class AssociateTenderRequest(_PydanticBase):
+    temp_file_path: str
+
+
+@router.post("/{project_id}/associate-tender", response_model=ApiResponse)
+async def associate_tender(
+    project_id: int,
+    body: AssociateTenderRequest,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """将预览时上传的临时招标文件关联到项目"""
+    import shutil
+    from pathlib import Path
+
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="投标项目不存在")
+
+    temp_path = Path(body.temp_file_path)
+    if not temp_path.exists() or "_temp" not in str(temp_path):
+        raise HTTPException(status_code=400, detail="临时文件不存在或路径无效")
+
+    # 移动到项目目录
+    dest_dir = Path(f"storage/tenders/{tenant_id}/{project_id}")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / temp_path.name
+    shutil.move(str(temp_path), str(dest_path))
+
+    project.tender_doc_path = str(dest_path)
+    await session.commit()
+
+    return ApiResponse(data={
+        "file_path": str(dest_path),
+        "message": "招标文件已关联到项目",
+    })
 
 
 # ========== 招标文件上传与解析 ==========
@@ -579,7 +687,7 @@ async def rewrite_selection(
             "original": body.text,
             "rewritten": result_text,
             "action": body.action,
-            "model": model,
+            "model": cfg["model"],
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 重写失败: {str(e)}")

@@ -4,14 +4,17 @@
 架构红线：
   - AI 生成文档必须过 Critic 质量闭环（01-AI-Platform-Rules.md L80-89）
   - 模型名从 LLMSelector 获取（禁止硬编码）
+  - 报价数值禁止由 LLM 在技术标章节中编造（防主观报价与客观报价表打架→废标）
 
 审查维度：
   1. 事实一致性 — 企业名/资质/冷链配置是否与 enterprise 数据一致
   2. 投标规范 — 是否使用"我方"/"贵方"等标准投标用语
   3. 完整性 — 是否覆盖了招标要求的关键评分点
   4. 字数合理性 — 章节字数是否在合理范围内
+  5. 报价越权拦截 — 非报价章节不得出现具体价格承诺
 """
 import os
+import re
 from typing import Optional
 
 from openai import AsyncOpenAI
@@ -40,6 +43,34 @@ class BidCriticService:
             client_kwargs["base_url"] = cfg["base_url"]
         self.client = AsyncOpenAI(**client_kwargs)
 
+    # 报价敏感词模式（匹配具体数值+单位的价格承诺）
+    _PRICE_PATTERNS = [
+        re.compile(r'(\d+\.?\d*)\s*元/(斤|公斤|kg|千克|吨|份|餐)'),  # "3.5元/斤"
+        re.compile(r'(单价|报价|售价|成本价)\s*[:：]?\s*\d+'),        # "单价：35"
+        re.compile(r'(打|下浮)\s*\d+\.?\d*\s*折'),                    # "打8折"
+        re.compile(r'下浮\s*\d+\.?\d*\s*%'),                          # "下浮10%"
+        re.compile(r'承诺.*?(\d+\.?\d*)\s*元'),                       # "承诺XX元"
+        re.compile(r'优惠\s*\d+\.?\d*\s*%'),                          # "优惠15%"
+        re.compile(r'全[场品类]*\s*\d+\.?\d*\s*折'),                  # "全场5折"
+    ]
+
+    # 报价相关章节编号（这些章节允许出现价格）
+    _QUOTATION_CHAPTER_NOS = {"8", "八", "第八章", "报价", "商务报价"}
+
+    def _sanitize_price_leakage(self, content: str, chapter_no: str, chapter_name: str) -> str:
+        """非报价章节中擦除具体价格承诺，防止技术标与商务标报价冲突导致废标"""
+        # 报价专属章节允许出现价格
+        if any(kw in chapter_no or kw in chapter_name for kw in self._QUOTATION_CHAPTER_NOS):
+            return content
+
+        sanitized = content
+        for pattern in self._PRICE_PATTERNS:
+            matches = pattern.findall(sanitized)
+            if matches:
+                sanitized = pattern.sub("[具体价格详见商务报价章节]", sanitized)
+
+        return sanitized
+
     async def critic_and_rewrite(
         self,
         content: str,
@@ -66,7 +97,11 @@ class BidCriticService:
             }
         """
         chapter_name = chapter_meta.get("name", "未知章节")
+        chapter_no = str(chapter_meta.get("chapter_no", ""))
         requirements = chapter_meta.get("requirements", [])
+
+        # ===== 规则级拦截：非报价章节禁止出现具体价格承诺 =====
+        content = self._sanitize_price_leakage(content, chapter_no, chapter_name)
 
         # 构建企业事实信息（用于核查）
         enterprise_facts = ""

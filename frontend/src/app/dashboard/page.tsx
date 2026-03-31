@@ -5,13 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   FileText,
   Building2,
-  ShieldCheck,
   Loader2,
   ArrowUpRight,
   Clock,
   CheckCircle2,
   AlertTriangle,
   Sparkles,
+  Zap,
+  CalendarClock,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api";
@@ -49,13 +50,20 @@ const CUSTOMER_LABELS: Record<string, string> = {
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<BidProject[]>([]);
+  const [stats, setStats] = useState<{
+    total: number; in_progress: number; completed: number; total_budget: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await api.get("/bid-projects");
-        setProjects(res.data?.data || []);
+        const [projRes, statsRes] = await Promise.all([
+          api.get("/bid-projects"),
+          api.get("/bid-projects/dashboard/stats"),
+        ]);
+        setProjects(projRes.data?.data || []);
+        setStats(statsRes.data?.data || null);
       } catch {
         // ignore
       } finally {
@@ -65,14 +73,10 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
-  const total = projects.length;
-  const inProgress = projects.filter((p) =>
-    ["parsing", "parsed", "generating", "generated", "reviewing"].includes(p.status)
-  ).length;
-  const completed = projects.filter((p) =>
-    ["completed", "submitted", "won"].includes(p.status)
-  ).length;
-  const totalBudget = projects.reduce((sum, p) => sum + (p.budget_amount || 0), 0);
+  const total = stats?.total ?? projects.length;
+  const inProgress = stats?.in_progress ?? 0;
+  const completed = stats?.completed ?? 0;
+  const totalBudget = stats?.total_budget ?? projects.reduce((sum, p) => sum + (p.budget_amount || 0), 0);
 
   const recentProjects = [...projects]
     .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
@@ -123,49 +127,109 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+      {/* 智能待办提醒 */}
+      {!loading && (
+        <Card className="border-amber-100">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarClock className="h-4 w-4 text-amber-600" />
+              待办提醒
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const reminders: { text: string; type: "urgent" | "warn" | "info"; href: string }[] = [];
 
-      {/* 快捷入口 */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Link href="/dashboard/bid-projects">
-          <Card className="cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-blue-100">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="rounded-lg bg-blue-50 p-3">
-                <FileText className="h-6 w-6 text-blue-600" />
-              </div>
-              <div>
-                <p className="font-medium">投标项目管理</p>
-                <p className="text-xs text-slate-400">上传招标文件 / AI 解析 / 生成章节</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/dashboard/ai">
-          <Card className="cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-purple-100">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="rounded-lg bg-purple-50 p-3">
-                <Sparkles className="h-6 w-6 text-purple-600" />
-              </div>
-              <div>
-                <p className="font-medium">AI 智能助手</p>
-                <p className="text-xs text-slate-400">资质核验 / 报价分析 / 法规检索</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/dashboard/knowledge">
-          <Card className="cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-emerald-100">
-            <CardContent className="flex items-center gap-4 pt-6">
-              <div className="rounded-lg bg-emerald-50 p-3">
-                <ShieldCheck className="h-6 w-6 text-emerald-600" />
-              </div>
-              <div>
-                <p className="font-medium">知识库检索</p>
-                <p className="text-xs text-slate-400">食品安全法规 / 冷链标准 / 中标案例</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
+              // 截止日倒计时
+              projects.forEach((p) => {
+                if (p.deadline && !["completed", "submitted", "won", "lost"].includes(p.status)) {
+                  const deadlineDate = new Date(p.deadline);
+                  const now = new Date();
+                  const daysLeft = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                  if (daysLeft <= 0) {
+                    reminders.push({
+                      text: `「${p.project_name}」已过截止日期`,
+                      type: "urgent",
+                      href: `/dashboard/bid-projects/${p.id}`,
+                    });
+                  } else if (daysLeft <= 3) {
+                    reminders.push({
+                      text: `「${p.project_name}」截止日期还剩 ${daysLeft} 天`,
+                      type: "urgent",
+                      href: `/dashboard/bid-projects/${p.id}`,
+                    });
+                  } else if (daysLeft <= 7) {
+                    reminders.push({
+                      text: `「${p.project_name}」截止日期还剩 ${daysLeft} 天`,
+                      type: "warn",
+                      href: `/dashboard/bid-projects/${p.id}`,
+                    });
+                  }
+                }
+              });
+
+              // 草稿状态提醒
+              const drafts = projects.filter((p) => p.status === "draft");
+              if (drafts.length > 0) {
+                reminders.push({
+                  text: `${drafts.length} 个项目仍处于草稿状态，请上传招标文件并开始解析`,
+                  type: "info",
+                  href: "/dashboard/bid-projects",
+                });
+              }
+
+              // AI 配额预警
+              if ((stats?.in_progress ?? 0) > 0 && total > 0) {
+                const progressRate = Math.round(((stats?.in_progress ?? 0) / total) * 100);
+                if (progressRate > 60) {
+                  reminders.push({
+                    text: `${stats?.in_progress} 个项目正在进行中，注意 AI 配额消耗`,
+                    type: "warn",
+                    href: "/dashboard/billing",
+                  });
+                }
+              }
+
+              if (reminders.length === 0) {
+                return (
+                  <div className="flex items-center gap-2 py-2 text-sm text-slate-400">
+                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                    暂无紧急待办，一切顺利 🎉
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-2">
+                  {reminders.map((r, i) => (
+                    <Link key={i} href={r.href}>
+                      <div
+                        className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-all hover:shadow-sm cursor-pointer ${
+                          r.type === "urgent"
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : r.type === "warn"
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-blue-200 bg-blue-50 text-blue-700"
+                        }`}
+                      >
+                        {r.type === "urgent" ? (
+                          <AlertTriangle className="h-4 w-4 shrink-0" />
+                        ) : r.type === "warn" ? (
+                          <Clock className="h-4 w-4 shrink-0" />
+                        ) : (
+                          <Zap className="h-4 w-4 shrink-0" />
+                        )}
+                        <span className="flex-1">{r.text}</span>
+                        <ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
 
       {/* 最近项目 */}
       <Card>

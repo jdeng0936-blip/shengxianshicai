@@ -18,7 +18,7 @@
 #
 # 模型名格式: "provider/model_id"
 #   例: "openai/gpt-5.4" → 使用 OPENAI_API_KEY 调 gpt-5.4
-#   例: "gemini/gemini-3.1" → 使用 GEMINI_API_KEY 调 gemini-3.1
+#   例: "gemini/gemini-3.1-pro-preview" → 使用 GEMINI_API_KEY 调 gemini-3.1
 
 # --- 任务路由表 ---
 tasks:
@@ -27,20 +27,20 @@ tasks:
 
   # AI 路由引擎 — Tool Calling 意图识别 + 8大投标工具调度
   tool_calling:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1", "deepseek/deepseek-chat"]
+    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview", "deepseek/deepseek-chat"]
     temperature: 0.1
     max_tokens: 1024
     note: "核心路由，要求工具调用准确率最高"
 
   # AI 对话 — 投标智能助手通用会话
   chat:
-    models: ["gemini/gemini-3.1", "openai/gpt-5.4", "deepseek/deepseek-chat"]
+    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4", "deepseek/deepseek-chat"]
     temperature: 0.5
     max_tokens: 2048
 
   # 工具结果解读
   tool_result_interpret:
-    models: ["gemini/gemini-3.1", "openai/gpt-5.4"]
+    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
     temperature: 0.3
     max_tokens: 2048
 
@@ -48,21 +48,21 @@ tasks:
 
   # 投标章节生成 — GPT-5.4 主力（商务文档最强）
   bid_section_generate:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1", "deepseek/deepseek-chat"]
+    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview", "deepseek/deepseek-chat"]
     temperature: 0.3
     max_tokens: 8192
     note: "投标文件生成质量要求最高，GPT-5.4 商务文档能力强"
 
   # 招标文件解析 — 结构化提取
   tender_parse:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1"]
+    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview"]
     temperature: 0.1
     max_tokens: 4096
     note: "解析精度要求极高，尤其废标项不能遗漏"
 
   # 投标合规性检查 — 安全关键
   compliance_check:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1"]
+    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview"]
     temperature: 0.1
     max_tokens: 2048
     note: "安全关键任务，需最高推理精度"
@@ -70,26 +70,40 @@ tasks:
   # ===== 知识库与检索 =====
 
   regulation_retrieval:
-    models: ["gemini/gemini-3.1", "openai/gpt-5.4"]
+    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
     temperature: 0.1
     max_tokens: 1024
 
   template_matching:
-    models: ["gemini/gemini-3.1", "openai/gpt-5.4"]
+    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
     temperature: 0.1
     max_tokens: 2048
 
   # ===== 报价引擎辅助 =====
 
   pricing_analysis:
-    models: ["gemini/gemini-3.1", "openai/gpt-5.4"]
+    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
     temperature: 0.2
     max_tokens: 1024
 
   quotation_extract:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1"]
+    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview"]
     temperature: 0.1
     max_tokens: 2048
+
+  # ===== 商机漏斗 =====
+
+  tender_text_parse:
+    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
+    temperature: 0.1
+    max_tokens: 2048
+    note: "从公告原文提取结构化信息，精度要求高"
+
+  tender_match_analysis:
+    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4", "deepseek/deepseek-chat"]
+    temperature: 0.2
+    max_tokens: 2048
+    note: "招标公告与企业能力匹配分析，需结构化JSON输出"
 
   # ===== Embedding =====
 

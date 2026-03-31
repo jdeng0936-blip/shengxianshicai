@@ -22,6 +22,10 @@ from app.models.bid_project import BidProject, TenderRequirement, BidChapter  # 
 from app.models.credential import Credential  # noqa
 from app.models.quotation import QuotationSheet, QuotationItem  # noqa
 from app.models.image_asset import ImageAsset  # noqa
+from app.models.standard import StdDocument, StdClause, BidCase  # noqa
+from app.models.billing import UserQuota, UsageLog  # noqa
+from app.models.feedback import FeedbackLog  # noqa
+from app.models.tender_notice import TenderNotice  # noqa
 
 config = context.config
 

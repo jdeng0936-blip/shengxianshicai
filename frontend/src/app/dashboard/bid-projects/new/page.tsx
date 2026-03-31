@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,9 +14,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
+import FileDropZone from "@/components/ui/file-drop-zone";
 
 export default function NewBidProjectPage() {
   const router = useRouter();
@@ -33,6 +34,78 @@ export default function NewBidProjectPage() {
     description: "",
   });
 
+  // 招标文件上传相关状态
+  const [tenderFile, setTenderFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parsed, setParsed] = useState(false);
+  const [tempFilePath, setTempFilePath] = useState("");
+
+  const handleTenderUpload = async (file: File) => {
+    setTenderFile(file);
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadError("");
+    setParsed(false);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      // 上传并预览解析
+      setUploading(true);
+      const res = await api.post("/bid-projects/preview-tender", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 120000,
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percent);
+          }
+        },
+      });
+
+      setUploadProgress(100);
+      setUploading(false);
+      setParsing(true);
+
+      const data = res.data?.data;
+      if (data) {
+        // 保存临时文件路径
+        if (data.temp_file_path) setTempFilePath(data.temp_file_path);
+
+        // 自动填充表单（仅填充非空字段）
+        setForm((prev) => ({
+          ...prev,
+          ...(data.project_name && { project_name: data.project_name }),
+          ...(data.buyer_name && { tender_org: data.buyer_name }),
+          ...(data.customer_type && { customer_type: data.customer_type }),
+          ...(data.tender_type && { tender_type: data.tender_type }),
+          ...(data.deadline && { deadline: data.deadline }),
+          ...(data.budget_amount && { budget_amount: String(data.budget_amount) }),
+          ...(data.delivery_scope && { delivery_scope: data.delivery_scope }),
+          ...(data.delivery_period && { delivery_period: data.delivery_period }),
+        }));
+        setParsed(true);
+      }
+    } catch (err: any) {
+      setUploadError(err.response?.data?.detail || "文件上传或解析失败");
+    } finally {
+      setUploading(false);
+      setParsing(false);
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setTenderFile(null);
+    setUploadError("");
+    setUploadProgress(0);
+    setParsed(false);
+    setTempFilePath("");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.project_name.trim()) return;
@@ -46,6 +119,16 @@ export default function NewBidProjectPage() {
       const res = await api.post("/bid-projects", payload);
       const project = res.data?.data;
       if (project?.id) {
+        // 如果有临时文件，关联到项目
+        if (tempFilePath) {
+          try {
+            await api.post(`/bid-projects/${project.id}/associate-tender`, {
+              temp_file_path: tempFilePath,
+            });
+          } catch {
+            // 关联失败不阻塞，用户可在项目详情页重新上传
+          }
+        }
         router.push(`/dashboard/bid-projects/${project.id}`);
       }
     } catch (err: any) {
@@ -66,6 +149,51 @@ export default function NewBidProjectPage() {
         <h1 className="text-2xl font-bold text-slate-900">新建投标项目</h1>
       </div>
 
+      {/* 上传招标文件 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-blue-500" />
+            智能填写
+          </CardTitle>
+          <CardDescription>
+            上传招标文件，AI 自动提取项目信息并填充下方表单，您可以修改任何字段
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <FileDropZone
+            accept={[".pdf", ".docx", ".doc"]}
+            file={tenderFile}
+            onFileSelect={handleTenderUpload}
+            onFileRemove={handleRemoveFile}
+            uploading={uploading}
+            progress={uploadProgress}
+            error={uploadError}
+            disabled={uploading || parsing}
+            hint="上传招标文件（PDF/DOCX/DOC），AI 将自动提取项目基本信息"
+          />
+
+          {parsing && (
+            <div className="flex items-center gap-3 rounded-md bg-blue-50 p-3 dark:bg-blue-950">
+              <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+              <span className="text-sm text-blue-700 dark:text-blue-300">
+                AI 正在分析招标文件，提取项目信息...
+              </span>
+            </div>
+          )}
+
+          {parsed && (
+            <div className="flex items-center gap-3 rounded-md bg-green-50 p-3 dark:bg-green-950">
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <span className="text-sm text-green-700 dark:text-green-300">
+                已自动填充项目信息，请核对并修改下方表单
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 项目基本信息表单 */}
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader>

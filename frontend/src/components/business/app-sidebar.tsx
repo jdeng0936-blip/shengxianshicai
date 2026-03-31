@@ -10,6 +10,7 @@ import {
   Library,
   ClipboardList,
   CreditCard,
+  Radar,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
@@ -17,6 +18,7 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "工作台", icon: LayoutDashboard },
   { href: "/dashboard/bid-projects", label: "投标项目", icon: ClipboardList },
+  { href: "/dashboard/tender-notices", label: "商机雷达", icon: Radar },
   { href: "/dashboard/ai", label: "AI 助手", icon: Bot },
   { href: "/dashboard/knowledge", label: "知识库", icon: Library },
   { href: "/dashboard/billing", label: "计费中心", icon: CreditCard },

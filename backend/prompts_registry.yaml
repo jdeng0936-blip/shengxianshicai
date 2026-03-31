@@ -329,3 +329,83 @@ prompts:
         2. 各品类定价注意事项
         3. 报价风险提示（低于成本/超预算）
         4. 差异化报价策略建议
+
+  # ===== 商机漏斗 — 公告原文解析 =====
+  tender_text_parse:
+    v1_extract:
+      version: "1.0"
+      description: "从粘贴的招标公告原文中提取结构化信息"
+      template: |
+        你是招标公告信息提取专家。请从以下公告原文中提取结构化信息。
+
+        == 公告原文 ==
+        {raw_text}
+
+        请严格按以下 JSON 格式输出，未找到的字段填 null：
+        {{
+          "title": "项目名称",
+          "buyer_name": "采购方/招标方名称",
+          "buyer_region": "所在地区（如：安徽合肥）",
+          "customer_type": "school/hospital/government/enterprise/canteen 之一",
+          "tender_type": "open/invite/negotiate/inquiry/single 之一",
+          "budget_amount": 数字（元，不含万字），
+          "deadline": "YYYY-MM-DD 格式",
+          "publish_date": "YYYY-MM-DD 格式",
+          "delivery_scope": "配送范围描述",
+          "content_summary": "公告核心要求摘要（200字内，包含关键资格要求和评分标准）"
+        }}
+
+        注意：
+        1. budget_amount 必须转为元（如50万=500000）
+        2. 如果原文是 HTML，忽略标签只提取文本内容
+        3. 只输出 JSON，不要加任何解释
+
+  # ===== 商机漏斗 — 招标公告匹配分析 =====
+  tender_match_analysis:
+    v1_capability_match:
+      version: "1.0"
+      description: "分析招标公告与企业能力的匹配度"
+      template: |
+        你是生鲜食材配送行业的投标顾问。请分析以下招标公告与投标企业的匹配程度。
+
+        == 招标公告信息 ==
+        标题：{notice_title}
+        采购方：{buyer_name}
+        客户类型：{customer_type}
+        预算金额：{budget_amount}元
+        投标截止：{deadline}
+        配送范围：{delivery_scope}
+        公告摘要：{content_summary}
+
+        == 投标企业能力画像 ==
+        {capability_graph}
+
+        请严格按以下 JSON 格式输出分析结果：
+        {{
+          "match_score": 0-100的整数,
+          "match_level": "high/medium/low/risky",
+          "summary": "一句话匹配结论",
+          "strengths": [
+            {{"item": "优势项描述", "detail": "具体说明"}}
+          ],
+          "gaps": [
+            {{"item": "缺口项", "severity": "fatal/warning/minor", "detail": "说明", "suggestion": "建议"}}
+          ],
+          "risk_factors": [
+            {{"factor": "风险点", "level": "high/medium/low", "detail": "说明"}}
+          ],
+          "recommendation": "综合建议（是否值得投标、需要哪些准备）",
+          "estimated_win_probability": "high/medium/low",
+          "preparation_checklist": ["准备事项1", "准备事项2"]
+        }}
+
+        评分标准：
+        - 资质完全满足且有竞争优势: 80-100分
+        - 资质基本满足但有小缺口: 60-79分
+        - 有明显资质缺口但可补: 40-59分
+        - 有致命缺口（如缺少必需许可证）: 0-39分，match_level 必须为 "risky"
+
+        注意：
+        1. severity 为 "fatal" 表示不满足该要求将直接废标
+        2. 如果企业冷链能力不足以覆盖配送范围，这是致命缺口
+        3. 只输出 JSON，不要加任何解释

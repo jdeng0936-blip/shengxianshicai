@@ -12,6 +12,7 @@ import {
   Crown,
   Loader2,
 } from "lucide-react";
+import api from "@/lib/api";
 
 const PLAN_CONFIG = {
   free: { label: "免费版", color: "bg-slate-100 text-slate-600", icon: Zap },
@@ -64,16 +65,23 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // MVP 阶段：模拟数据（后续接入 /billing/stats API）
-    setTimeout(() => {
-      setStats({
-        plan_type: "free",
-        projects: { used: 2, max: 5 },
-        exports: { used: 3, max: 10 },
-        ai_calls: { used: 27, max: 100 },
-      });
-      setLoading(false);
-    }, 500);
+    const fetchQuota = async () => {
+      try {
+        const res = await api.get("/billing/quota");
+        setStats(res.data?.data || null);
+      } catch {
+        // API 不可用时使用默认值
+        setStats({
+          plan_type: "free",
+          projects: { used: 0, max: 5 },
+          exports: { used: 0, max: 10 },
+          ai_calls: { used: 0, max: 100 },
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchQuota();
   }, []);
 
   if (loading) {
@@ -165,7 +173,7 @@ export default function BillingPage() {
                 <li>不限投标项目</li>
                 <li>不限文档导出</li>
                 <li>2000 次 AI 调用</li>
-                <li>优先使用 GPT-5.4</li>
+                <li>优先使用 DeepSeek Pro</li>
                 <li>风险报告 + 合规检查</li>
               </ul>
               <Button className="mt-4 w-full">

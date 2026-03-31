@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
+import ChapterFeedback from "@/components/business/chapter-feedback";
 
 interface BidChapter {
   id: number;
@@ -426,13 +427,26 @@ export default function ChaptersEditorPage() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 overflow-hidden p-0">
-                  <MarkdownEditor
-                    value={editContent}
-                    onChange={setEditContent}
-                    placeholder="章节内容为空，点击「AI 生成」开始..."
-                    onSelectionChange={setSelection}
-                  />
+                <CardContent className="flex-1 overflow-hidden p-0 flex flex-col">
+                  <div className="flex-1 overflow-hidden">
+                    <MarkdownEditor
+                      value={editContent}
+                      onChange={setEditContent}
+                      placeholder="章节内容为空，点击「AI 生成」开始..."
+                      onSelectionChange={setSelection}
+                    />
+                  </div>
+                  {/* AI 内容反馈（仅 AI 生成的章节显示） */}
+                  {selectedChapter.source === "ai" && selectedChapter.content && (
+                    <div className="shrink-0 border-t px-4 py-1">
+                      <ChapterFeedback
+                        projectId={projectId}
+                        chapterNo={selectedChapter.chapter_no}
+                        chapterTitle={selectedChapter.title}
+                        content={selectedChapter.content}
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </>
             ) : (

@@ -18,9 +18,14 @@ import {
   Truck,
   AlertTriangle,
   CheckCircle2,
+  ImageIcon,
+  Upload,
+  X,
+  Star,
 } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
+import FileDropZone from "@/components/ui/file-drop-zone";
 
 interface Enterprise {
   id: number;
@@ -65,11 +70,47 @@ interface Credential {
   is_verified: boolean;
 }
 
+interface ImageAsset {
+  id: number;
+  enterprise_id: number;
+  category: string;
+  title: string;
+  description?: string;
+  file_name?: string;
+  file_size?: number;
+  width?: number;
+  height?: number;
+  tags?: string;
+  suggested_chapter?: string;
+  is_default: boolean;
+}
+
 interface BidProject {
   id: number;
   project_name: string;
   enterprise_id?: number;
 }
+
+const IMAGE_CATEGORIES = [
+  { value: "cold_chain_vehicle", label: "冷链车辆" },
+  { value: "warehouse", label: "仓库/冷库" },
+  { value: "testing_equipment", label: "检测设备" },
+  { value: "food_sample", label: "食材样品" },
+  { value: "process_flow", label: "流程图/架构图" },
+  { value: "company_environment", label: "公司环境" },
+  { value: "sample_retention", label: "留样柜" },
+  { value: "inspection_report", label: "检验报告" },
+  { value: "certificate", label: "证书/奖项" },
+  { value: "delivery_scene", label: "配送现场" },
+  { value: "training", label: "培训场景" },
+  { value: "canteen", label: "食堂/餐厅" },
+  { value: "traceability", label: "追溯系统" },
+  { value: "other", label: "其他" },
+];
+
+const IMAGE_CAT_LABELS: Record<string, string> = Object.fromEntries(
+  IMAGE_CATEGORIES.map((c) => [c.value, c.label])
+);
 
 const CRED_TYPE_OPTIONS = [
   { value: "business_license", label: "营业执照" },
@@ -117,6 +158,17 @@ export default function EnterprisePage() {
   const [form, setForm] = useState<Partial<Enterprise>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // 图片管理
+  const [images, setImages] = useState<ImageAsset[]>([]);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageUploadProgress, setImageUploadProgress] = useState(0);
+  const [imageUploadError, setImageUploadError] = useState("");
+  const [imageCategory, setImageCategory] = useState("other");
+  const [imageTitle, setImageTitle] = useState("");
+  const [showImageUpload, setShowImageUpload] = useState(false);
+  const [imageCatFilter, setImageCatFilter] = useState("");
+
   const [showNewCred, setShowNewCred] = useState(false);
   const [newCred, setNewCred] = useState({
     cred_type: "business_license",
@@ -149,6 +201,12 @@ export default function EnterprisePage() {
 
         const credRes = await api.get(`/credentials/enterprise/${proj.enterprise_id}`);
         setCredentials(credRes.data?.data || []);
+
+        // 加载图片
+        try {
+          const imgRes = await api.get(`/images/enterprise/${proj.enterprise_id}`);
+          setImages(imgRes.data?.data || []);
+        } catch { /* ignore */ }
       }
     } catch {
       // ignore
@@ -221,6 +279,46 @@ export default function EnterprisePage() {
       await fetchData();
     } catch (err: any) {
       alert(err.response?.data?.detail || "添加失败");
+    }
+  };
+
+  const handleUploadImage = async () => {
+    if (!enterprise || !imageFile) return;
+    setImageUploading(true);
+    setImageUploadProgress(0);
+    setImageUploadError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", imageFile);
+      formData.append("enterprise_id", String(enterprise.id));
+      formData.append("category", imageCategory);
+      formData.append("title", imageTitle || imageFile.name);
+      await api.post("/images/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (e) => {
+          if (e.total) setImageUploadProgress(Math.round((e.loaded * 100) / e.total));
+        },
+      });
+      setImageUploadProgress(100);
+      setImageFile(null);
+      setImageTitle("");
+      setImageCategory("other");
+      setShowImageUpload(false);
+      await fetchData();
+    } catch (err: any) {
+      setImageUploadError(err.response?.data?.detail || "上传失败");
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const handleDeleteImage = async (imageId: number) => {
+    if (!confirm("确认删除此图片？")) return;
+    try {
+      await api.delete(`/images/${imageId}`);
+      setImages((prev) => prev.filter((i) => i.id !== imageId));
+    } catch {
+      alert("删除失败");
     }
   };
 
@@ -595,6 +693,128 @@ export default function EnterprisePage() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          {/* 图片资源库 */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <ImageIcon className="h-5 w-5" />
+                  图片资源库（{images.length} 张）
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={() => setShowImageUpload(!showImageUpload)}>
+                  <Upload className="mr-1 h-4 w-4" />
+                  上传图片
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* 上传表单 */}
+              {showImageUpload && (
+                <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+                  <FileDropZone
+                    accept={[".jpg", ".jpeg", ".png", ".gif", ".webp"]}
+                    file={imageFile}
+                    onFileSelect={(f) => { setImageFile(f); setImageUploadError(""); }}
+                    onFileRemove={() => { setImageFile(null); setImageUploadError(""); }}
+                    uploading={imageUploading}
+                    progress={imageUploadProgress}
+                    error={imageUploadError}
+                    hint="支持 JPG/PNG/GIF/WebP 格式"
+                  />
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-500">图片分类</label>
+                      <select
+                        className="h-9 w-full rounded-md border border-slate-200 px-3 text-sm"
+                        value={imageCategory}
+                        onChange={(e) => setImageCategory(e.target.value)}
+                      >
+                        {IMAGE_CATEGORIES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-500">图片标题</label>
+                      <Input
+                        value={imageTitle}
+                        onChange={(e) => setImageTitle(e.target.value)}
+                        placeholder="如：冷链配送车-京A12345"
+                      />
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <Button size="sm" onClick={handleUploadImage} disabled={!imageFile || imageUploading}>
+                        {imageUploading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1 h-3.5 w-3.5" />}
+                        上传
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setShowImageUpload(false); setImageFile(null); }}>取消</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 分类筛选 */}
+              {images.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-1">
+                  <button
+                    className={`rounded-full px-3 py-1 text-xs transition-colors ${!imageCatFilter ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                    onClick={() => setImageCatFilter("")}
+                  >
+                    全部
+                  </button>
+                  {[...new Set(images.map((i) => i.category))].map((cat) => (
+                    <button
+                      key={cat}
+                      className={`rounded-full px-3 py-1 text-xs transition-colors ${imageCatFilter === cat ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                      onClick={() => setImageCatFilter(cat)}
+                    >
+                      {IMAGE_CAT_LABELS[cat] || cat}（{images.filter((i) => i.category === cat).length}）
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 图片网格 */}
+              {images.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-400">
+                  暂无图片，点击「上传图片」添加企业资质照片、冷链车辆照片等
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  {images
+                    .filter((i) => !imageCatFilter || i.category === imageCatFilter)
+                    .map((img) => (
+                      <div key={img.id} className="group relative overflow-hidden rounded-lg border bg-slate-50">
+                        <div className="aspect-[4/3] flex items-center justify-center bg-slate-100">
+                          <img
+                            src={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/images/file/${img.id}`}
+                            alt={img.title}
+                            className="h-full w-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        </div>
+                        <div className="p-2">
+                          <p className="truncate text-xs font-medium text-slate-700">{img.title}</p>
+                          <div className="flex items-center justify-between mt-1">
+                            <Badge variant="secondary" className="text-xs">
+                              {IMAGE_CAT_LABELS[img.category] || img.category}
+                            </Badge>
+                            {img.is_default && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}
+                          </div>
+                        </div>
+                        {/* 悬浮删除 */}
+                        <button
+                          className="absolute top-1 right-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                          onClick={() => handleDeleteImage(img.id)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
                 </div>
               )}
             </CardContent>

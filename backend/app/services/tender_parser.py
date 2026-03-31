@@ -123,6 +123,91 @@ class TenderParseService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    @staticmethod
+    async def save_temp_file(file: UploadFile) -> tuple[str, str]:
+        """保存上传文件到临时目录，返回 (临时文件路径, 原始文件名)"""
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise ValueError(f"不支持的文件格式: {ext}，仅支持 PDF/DOCX/DOC")
+
+        temp_dir = TENDER_UPLOAD_ROOT / "_temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        save_name = f"{uuid.uuid4().hex}{ext}"
+        save_path = temp_dir / save_name
+
+        content = await file.read()
+        async with aiofiles.open(save_path, "wb") as f:
+            await f.write(content)
+
+        return str(save_path), file.filename
+
+    @staticmethod
+    async def preview_parse(file_path: str, filename: str) -> dict:
+        """
+        仅提取招标文件基本信息用于预填表单，不写入数据库。
+        返回: project_name, buyer_name, customer_type, tender_type,
+              budget_amount, deadline, delivery_scope, delivery_period
+        """
+        from openai import AsyncOpenAI
+
+        # 提取文本
+        raw_text = extract_tender_text(file_path, filename)
+        if not raw_text or len(raw_text.strip()) < 50:
+            raise ValueError("招标文件内容为空或过短，无法解析")
+        text = _clean_text(raw_text)
+
+        # 只取前 8000 字符做快速预览解析
+        preview_text = text[:CHUNK_MAX_CHARS]
+
+        cfg = LLMSelector.get_client_config("tender_parse")
+        client = AsyncOpenAI(
+            api_key=cfg["api_key"],
+            base_url=cfg["base_url"] or None,
+        )
+
+        prompt = (
+            "你是专业的招标文件分析师，请快速阅读以下招标文件内容，"
+            "仅提取项目基本信息。\n\n"
+            "== 招标文件原文 ==\n"
+            f"{preview_text}\n\n"
+            "请严格按照以下 JSON 格式输出，未找到的字段填 null：\n"
+            "{\n"
+            '  "project_name": "项目名称",\n'
+            '  "buyer_name": "采购方/招标方名称",\n'
+            '  "customer_type": "school/hospital/government/enterprise/canteen 之一",\n'
+            '  "tender_type": "open/invite/negotiate/inquiry/single 之一",\n'
+            '  "budget_amount": 数字（元，不含万字）,\n'
+            '  "deadline": "YYYY-MM-DDTHH:MM 格式",\n'
+            '  "delivery_scope": "配送范围描述",\n'
+            '  "delivery_period": "配送周期/合同期限"\n'
+            "}\n\n"
+            "注意：只输出 JSON，不要加任何解释。"
+        )
+
+        response = await client.chat.completions.create(
+            model=cfg["model"],
+            messages=[{"role": "user", "content": prompt}],
+            temperature=LLMSelector.get_temperature("tender_parse"),
+            max_tokens=1024,
+        )
+
+        resp_text = response.choices[0].message.content or ""
+        try:
+            result = _extract_json_from_response(resp_text)
+        except (json.JSONDecodeError, ValueError):
+            result = {}
+
+        return {
+            "project_name": result.get("project_name"),
+            "buyer_name": result.get("buyer_name"),
+            "customer_type": result.get("customer_type"),
+            "tender_type": result.get("tender_type"),
+            "budget_amount": result.get("budget_amount"),
+            "deadline": result.get("deadline"),
+            "delivery_scope": result.get("delivery_scope"),
+            "delivery_period": result.get("delivery_period"),
+        }
+
     async def save_tender_file(
         self, project_id: int, tenant_id: int, file: UploadFile
     ) -> tuple[str, str]:

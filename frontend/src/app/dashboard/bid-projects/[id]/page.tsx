@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
-  Upload,
   Loader2,
   FileText,
   AlertTriangle,
@@ -18,10 +17,14 @@ import {
   Sparkles,
   Trash2,
   ShieldCheck,
+  Upload,
+  ClipboardList,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 import RiskReportPanel from "@/components/business/risk-report-panel";
+import FileDropZone from "@/components/ui/file-drop-zone";
 
 interface TenderRequirement {
   id: number;
@@ -81,18 +84,23 @@ const CATEGORY_MAP: Record<string, { label: string; icon: any; color: string }> 
 export default function BidProjectDetailPage() {
   const params = useParams();
   const projectId = params.id as string;
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [project, setProject] = useState<BidProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState("");
+  const [tenderFile, setTenderFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
-  const [activeTab, setActiveTab] = useState("disqualification");
+  const [activeReqTab, setActiveReqTab] = useState("disqualification");
   const [checking, setChecking] = useState(false);
   const [complianceResult, setComplianceResult] = useState<{
     total: number; passed: number; failed: number; warning: number;
     results: { id: number; category: string; content: string; status: string; note: string }[];
   } | null>(null);
+
+  // 主 Tab 状态
+  const [mainTab, setMainTab] = useState("overview");
 
   const fetchProject = useCallback(async () => {
     try {
@@ -110,23 +118,30 @@ export default function BidProjectDetailPage() {
     fetchProject();
   }, [fetchProject]);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleUpload = async (file: File) => {
+    setTenderFile(file);
     setUploading(true);
+    setUploadProgress(0);
+    setUploadError("");
+
     try {
       const formData = new FormData();
       formData.append("file", file);
       await api.post(`/bid-projects/${projectId}/upload-tender`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percent);
+          }
+        },
       });
+      setUploadProgress(100);
       await fetchProject();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "上传失败");
+      setUploadError(err.response?.data?.detail || "上传失败");
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -210,7 +225,7 @@ export default function BidProjectDetailPage() {
         </div>
       </div>
 
-      {/* 项目概览 */}
+      {/* 概览卡片 */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
         <Card>
           <CardContent className="pt-4">
@@ -261,241 +276,314 @@ export default function BidProjectDetailPage() {
         </Link>
       </div>
 
-      {/* 合规检查 */}
-      {project.requirements.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5" />
-                合规检查
-              </CardTitle>
-              <Button
-                onClick={handleComplianceCheck}
-                disabled={checking}
-                variant={complianceResult ? "outline" : "default"}
-              >
-                {checking ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ShieldCheck className="mr-2 h-4 w-4" />
-                )}
-                {checking ? "检查中..." : complianceResult ? "重新检查" : "开始合规检查"}
-              </Button>
-            </div>
-          </CardHeader>
-          {complianceResult && (
-            <CardContent>
-              {/* 汇总 */}
-              <div className="mb-4 grid grid-cols-4 gap-3">
-                <div className="rounded-lg bg-slate-50 p-3 text-center">
-                  <div className="text-2xl font-bold">{complianceResult.total}</div>
-                  <div className="text-xs text-slate-500">检查项</div>
-                </div>
-                <div className="rounded-lg bg-green-50 p-3 text-center">
-                  <div className="text-2xl font-bold text-green-600">{complianceResult.passed}</div>
-                  <div className="text-xs text-green-600">通过</div>
-                </div>
-                <div className="rounded-lg bg-red-50 p-3 text-center">
-                  <div className="text-2xl font-bold text-red-600">{complianceResult.failed}</div>
-                  <div className="text-xs text-red-600">不通过</div>
-                </div>
-                <div className="rounded-lg bg-amber-50 p-3 text-center">
-                  <div className="text-2xl font-bold text-amber-600">{complianceResult.warning}</div>
-                  <div className="text-xs text-amber-600">警告</div>
-                </div>
-              </div>
+      {/* ===== 主 Tab 区域 ===== */}
+      <Tabs value={mainTab} onValueChange={setMainTab}>
+        <TabsList className="w-full justify-start">
+          <TabsTrigger value="overview" className="gap-1.5">
+            <FileText className="h-3.5 w-3.5" />
+            招标文件
+          </TabsTrigger>
+          <TabsTrigger value="requirements" className="gap-1.5">
+            <ClipboardList className="h-3.5 w-3.5" />
+            招标要求
+            {project.requirements.length > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                {project.requirements.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="compliance" className="gap-1.5">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            合规风控
+          </TabsTrigger>
+        </TabsList>
 
-              {/* 问题清单（只显示 failed 和 warning） */}
-              {complianceResult.results
-                .filter((r) => r.status !== "passed")
-                .map((r) => (
-                  <div
-                    key={r.id}
-                    className={`mb-2 rounded-lg border p-3 ${
-                      r.status === "failed"
-                        ? "border-red-300 bg-red-50"
-                        : "border-amber-300 bg-amber-50"
-                    }`}
+        {/* ===== Tab 1: 招标文件 ===== */}
+        <TabsContent value="overview" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                招标文件上传与解析
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <FileDropZone
+                accept={[".pdf", ".docx", ".doc"]}
+                file={tenderFile}
+                onFileSelect={handleUpload}
+                onFileRemove={() => {
+                  setTenderFile(null);
+                  setUploadError("");
+                  setUploadProgress(0);
+                }}
+                uploading={uploading}
+                progress={uploadProgress}
+                error={uploadError}
+                disabled={uploading}
+                hint="支持 .pdf / .docx / .doc 格式的招标文件"
+              />
+              {project.tender_doc_path && (
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-green-600">
+                    <CheckCircle2 className="mr-1 inline h-4 w-4" />
+                    已上传招标文件
+                  </span>
+                  <Button
+                    onClick={handleParse}
+                    disabled={parsing || project.status === "parsing"}
                   >
-                    <div className="flex items-start gap-2">
-                      {r.status === "failed" ? (
-                        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                      ) : (
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                      )}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant={r.status === "failed" ? "destructive" : "outline"}
-                            className="text-xs"
-                          >
-                            {CATEGORY_MAP[r.category]?.label || r.category}
-                          </Badge>
-                          <span className="text-sm text-slate-700">{r.content}</span>
-                        </div>
-                        <p className={`mt-1 text-xs ${
-                          r.status === "failed" ? "text-red-600 font-medium" : "text-amber-600"
-                        }`}>
-                          {r.note}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              {complianceResult.failed === 0 && complianceResult.warning === 0 && (
-                <div className="rounded-lg bg-green-50 p-4 text-center">
-                  <CheckCircle2 className="mx-auto h-8 w-8 text-green-500" />
-                  <p className="mt-2 text-sm font-medium text-green-700">全部检查通过！</p>
+                    {parsing || project.status === "parsing" ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-4 w-4" />
+                    )}
+                    AI 解析招标要求
+                  </Button>
                 </div>
               )}
             </CardContent>
+          </Card>
+
+          {/* 项目基本信息 */}
+          {(project.description || project.delivery_scope || project.delivery_period) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">项目详细信息</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-slate-600">
+                {project.description && (
+                  <div>
+                    <span className="font-medium text-slate-800">项目描述：</span>
+                    {project.description}
+                  </div>
+                )}
+                {project.delivery_scope && (
+                  <div>
+                    <span className="font-medium text-slate-800">配送范围：</span>
+                    {project.delivery_scope}
+                  </div>
+                )}
+                {project.delivery_period && (
+                  <div>
+                    <span className="font-medium text-slate-800">供货周期：</span>
+                    {project.delivery_period}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
-        </Card>
-      )}
+        </TabsContent>
 
-      {/* 风险报告 */}
-      <RiskReportPanel projectId={projectId} />
-
-      {/* 招标文件上传 & 解析 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            招标文件
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.docx,.doc"
-              onChange={handleUpload}
-              className="hidden"
-            />
-            <Button
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-2 h-4 w-4" />
-              )}
-              {project.tender_doc_path ? "重新上传" : "上传招标文件"}
-            </Button>
-            {project.tender_doc_path && (
-              <>
-                <span className="text-sm text-green-600">
-                  <CheckCircle2 className="mr-1 inline h-4 w-4" />
-                  已上传
-                </span>
-                <Button
-                  onClick={handleParse}
-                  disabled={parsing || project.status === "parsing"}
-                >
-                  {parsing || project.status === "parsing" ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="mr-2 h-4 w-4" />
-                  )}
-                  AI 解析招标要求
-                </Button>
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 解析结果 — 按类型分 Tab */}
-      {project.requirements.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5" />
-              招标要求（{project.requirements.length} 条）
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="mb-4">
-                {Object.entries(CATEGORY_MAP).map(([key, cat]) => {
-                  const count = (requirementsByCategory[key] || []).length;
-                  return (
-                    <TabsTrigger key={key} value={key} className="gap-1.5">
-                      <cat.icon className={`h-3.5 w-3.5 ${cat.color}`} />
-                      {cat.label}
-                      {count > 0 && (
-                        <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                          {count}
-                        </Badge>
+        {/* ===== Tab 2: 招标要求 ===== */}
+        <TabsContent value="requirements" className="mt-4">
+          {project.requirements.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <ClipboardList className="h-10 w-10 text-slate-300" />
+                <p className="mt-3 text-sm text-slate-400">
+                  暂无招标要求，请先在"招标文件"Tab 中上传并解析招标文件
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5" />
+                  招标要求（{project.requirements.length} 条）
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Tabs value={activeReqTab} onValueChange={setActiveReqTab}>
+                  <TabsList className="mb-4">
+                    {Object.entries(CATEGORY_MAP).map(([key, cat]) => {
+                      const count = (requirementsByCategory[key] || []).length;
+                      return (
+                        <TabsTrigger key={key} value={key} className="gap-1.5">
+                          <cat.icon className={`h-3.5 w-3.5 ${cat.color}`} />
+                          {cat.label}
+                          {count > 0 && (
+                            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                              {count}
+                            </Badge>
+                          )}
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                  {Object.entries(CATEGORY_MAP).map(([key, cat]) => (
+                    <TabsContent key={key} value={key} className="space-y-2">
+                      {(requirementsByCategory[key] || []).length === 0 ? (
+                        <p className="py-8 text-center text-sm text-slate-400">
+                          暂无{cat.label}
+                        </p>
+                      ) : (
+                        (requirementsByCategory[key] || []).map((req) => (
+                          <div
+                            key={req.id}
+                            className={`flex items-start gap-3 rounded-lg border p-3 ${
+                              key === "disqualification"
+                                ? "border-red-200 bg-red-50"
+                                : "border-slate-200"
+                            }`}
+                          >
+                            <cat.icon className={`mt-0.5 h-4 w-4 shrink-0 ${cat.color}`} />
+                            <div className="flex-1">
+                              <p className="text-sm text-slate-800">{req.content}</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                                {req.is_mandatory && <Badge variant="outline">必须</Badge>}
+                                {req.max_score && <span>满分: {req.max_score}</span>}
+                                {req.score_weight && <span>权重: {req.score_weight}%</span>}
+                                {req.compliance_status === "passed" && (
+                                  <Badge className="bg-green-100 text-green-700 border-green-200">通过</Badge>
+                                )}
+                                {req.compliance_status === "failed" && (
+                                  <Badge variant="destructive">不通过</Badge>
+                                )}
+                                {req.compliance_status === "warning" && (
+                                  <Badge className="bg-amber-100 text-amber-700 border-amber-200">警告</Badge>
+                                )}
+                              </div>
+                              {req.compliance_note && (
+                                <p className={`mt-1 text-xs ${
+                                  req.compliance_status === "failed" ? "text-red-500" :
+                                  req.compliance_status === "warning" ? "text-amber-500" :
+                                  "text-green-500"
+                                }`}>
+                                  {req.compliance_note}
+                                </p>
+                              )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-slate-400 hover:text-red-500"
+                              onClick={() => handleDeleteRequirement(req.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))
                       )}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-              {Object.entries(CATEGORY_MAP).map(([key, cat]) => (
-                <TabsContent key={key} value={key} className="space-y-2">
-                  {(requirementsByCategory[key] || []).length === 0 ? (
-                    <p className="py-8 text-center text-sm text-slate-400">
-                      暂无{cat.label}
-                    </p>
-                  ) : (
-                    (requirementsByCategory[key] || []).map((req) => (
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ===== Tab 3: 合规风控 ===== */}
+        <TabsContent value="compliance" className="space-y-4 mt-4">
+          {/* 合规检查 */}
+          {project.requirements.length > 0 && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5" />
+                    合规检查
+                  </CardTitle>
+                  <Button
+                    onClick={handleComplianceCheck}
+                    disabled={checking}
+                    variant={complianceResult ? "outline" : "default"}
+                  >
+                    {checking ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                    )}
+                    {checking ? "检查中..." : complianceResult ? "重新检查" : "开始合规检查"}
+                  </Button>
+                </div>
+              </CardHeader>
+              {complianceResult && (
+                <CardContent>
+                  {/* 汇总 */}
+                  <div className="mb-4 grid grid-cols-4 gap-3">
+                    <div className="rounded-lg bg-slate-50 p-3 text-center">
+                      <div className="text-2xl font-bold">{complianceResult.total}</div>
+                      <div className="text-xs text-slate-500">检查项</div>
+                    </div>
+                    <div className="rounded-lg bg-green-50 p-3 text-center">
+                      <div className="text-2xl font-bold text-green-600">{complianceResult.passed}</div>
+                      <div className="text-xs text-green-600">通过</div>
+                    </div>
+                    <div className="rounded-lg bg-red-50 p-3 text-center">
+                      <div className="text-2xl font-bold text-red-600">{complianceResult.failed}</div>
+                      <div className="text-xs text-red-600">不通过</div>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 p-3 text-center">
+                      <div className="text-2xl font-bold text-amber-600">{complianceResult.warning}</div>
+                      <div className="text-xs text-amber-600">警告</div>
+                    </div>
+                  </div>
+
+                  {/* 问题清单 */}
+                  {complianceResult.results
+                    .filter((r) => r.status !== "passed")
+                    .map((r) => (
                       <div
-                        key={req.id}
-                        className={`flex items-start gap-3 rounded-lg border p-3 ${
-                          key === "disqualification"
-                            ? "border-red-200 bg-red-50"
-                            : "border-slate-200"
+                        key={r.id}
+                        className={`mb-2 rounded-lg border p-3 ${
+                          r.status === "failed"
+                            ? "border-red-300 bg-red-50"
+                            : "border-amber-300 bg-amber-50"
                         }`}
                       >
-                        <cat.icon className={`mt-0.5 h-4 w-4 shrink-0 ${cat.color}`} />
-                        <div className="flex-1">
-                          <p className="text-sm text-slate-800">{req.content}</p>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                            {req.is_mandatory && <Badge variant="outline">必须</Badge>}
-                            {req.max_score && <span>满分: {req.max_score}</span>}
-                            {req.score_weight && <span>权重: {req.score_weight}%</span>}
-                            {req.compliance_status === "passed" && (
-                              <Badge className="bg-green-100 text-green-700 border-green-200">通过</Badge>
-                            )}
-                            {req.compliance_status === "failed" && (
-                              <Badge variant="destructive">不通过</Badge>
-                            )}
-                            {req.compliance_status === "warning" && (
-                              <Badge className="bg-amber-100 text-amber-700 border-amber-200">警告</Badge>
-                            )}
-                          </div>
-                          {req.compliance_note && (
-                            <p className={`mt-1 text-xs ${
-                              req.compliance_status === "failed" ? "text-red-500" :
-                              req.compliance_status === "warning" ? "text-amber-500" :
-                              "text-green-500"
-                            }`}>
-                              {req.compliance_note}
-                            </p>
+                        <div className="flex items-start gap-2">
+                          {r.status === "failed" ? (
+                            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                          ) : (
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
                           )}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant={r.status === "failed" ? "destructive" : "outline"}
+                                className="text-xs"
+                              >
+                                {CATEGORY_MAP[r.category]?.label || r.category}
+                              </Badge>
+                              <span className="text-sm text-slate-700">{r.content}</span>
+                            </div>
+                            <p className={`mt-1 text-xs ${
+                              r.status === "failed" ? "text-red-600 font-medium" : "text-amber-600"
+                            }`}>
+                              {r.note}
+                            </p>
+                          </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-slate-400 hover:text-red-500"
-                          onClick={() => handleDeleteRequirement(req.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
                       </div>
-                    ))
+                    ))}
+                  {complianceResult.failed === 0 && complianceResult.warning === 0 && (
+                    <div className="rounded-lg bg-green-50 p-4 text-center">
+                      <CheckCircle2 className="mx-auto h-8 w-8 text-green-500" />
+                      <p className="mt-2 text-sm font-medium text-green-700">全部检查通过！</p>
+                    </div>
                   )}
-                </TabsContent>
-              ))}
-            </Tabs>
-          </CardContent>
-        </Card>
-      )}
+                </CardContent>
+              )}
+            </Card>
+          )}
+
+          {project.requirements.length === 0 && (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <ShieldCheck className="h-10 w-10 text-slate-300" />
+                <p className="mt-3 text-sm text-slate-400">
+                  请先上传并解析招标文件后再进行合规检查
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 风险报告 */}
+          <RiskReportPanel projectId={projectId} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
