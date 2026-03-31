@@ -165,4 +165,3 @@ app.include_router(bid_project_router, prefix="/api/v1")
 app.include_router(credential_router, prefix="/api/v1")
 app.include_router(quotation_router, prefix="/api/v1")
 app.include_router(image_asset_router, prefix="/api/v1")
-
