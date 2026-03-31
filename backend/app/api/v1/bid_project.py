@@ -22,6 +22,7 @@ from app.services.bid_generation_service import BidGenerationService
 from app.services.bid_doc_exporter import BidDocExporter
 from app.services.bid_compliance_service import BidComplianceService
 from app.services.bid_quotation_service import BidQuotationService
+from app.services.risk_report_service import RiskReportService
 from app.schemas.quotation import QuotationSheetOut
 
 router = APIRouter(prefix="/bid-projects", tags=["投标项目"])
@@ -430,6 +431,28 @@ async def export_bid_doc(
         raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
 
 
+@router.get("/{project_id}/export-check", response_model=ApiResponse)
+async def export_check(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """导出前检查 — 返回致命风险项列表和是否可导出"""
+    risk_svc = RiskReportService(session)
+    try:
+        report = await risk_svc.generate_report(project_id, tenant_id)
+        fatal_items = [r for r in report["risks"] if r["level"] == "fatal"]
+        return ApiResponse(data={
+            "can_export": len(fatal_items) == 0,
+            "fatal_count": len(fatal_items),
+            "fatal_items": fatal_items,
+            "disclaimer": "本文件由 AI 辅助生成，仅供参考。投标人应对内容的准确性、完整性和合规性承担最终责任。",
+        })
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/{project_id}/download")
 async def download_bid_doc(
     project_id: int,
@@ -560,3 +583,23 @@ async def rewrite_selection(
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 重写失败: {str(e)}")
+
+
+# ========== 风险报告 ==========
+
+@router.post("/{project_id}/risk-report", response_model=ApiResponse)
+async def generate_risk_report(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """生成投标风险报告（致命/严重/建议三级告警）"""
+    svc = RiskReportService(session)
+    try:
+        report = await svc.generate_report(project_id, tenant_id)
+        return ApiResponse(data=report)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"风险报告生成失败: {str(e)}")

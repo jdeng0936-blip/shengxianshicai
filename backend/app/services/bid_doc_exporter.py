@@ -140,9 +140,13 @@ class BidDocExporter:
         enterprise: Optional[Enterprise],
         credentials: list[Credential],
         quotation: Optional[QuotationSheet],
+        watermark: bool = False,
     ) -> str:
         doc = Document()
         self._setup_styles(doc)
+
+        # 页眉页脚
+        self._setup_header_footer(doc, project, enterprise, watermark)
 
         # 封面
         self._render_cover(doc, project, enterprise)
@@ -184,6 +188,54 @@ class BidDocExporter:
             section.bottom_margin = Cm(2.5)
             section.left_margin = Cm(3.0)
             section.right_margin = Cm(2.5)
+
+    def _setup_header_footer(
+        self, doc: Document, project: BidProject,
+        enterprise: Optional[Enterprise], watermark: bool = False,
+    ):
+        """设置页眉（项目名+企业名）和页脚（页码）"""
+        for section in doc.sections:
+            # 页眉
+            header = section.header
+            header.is_linked_to_previous = False
+            hp = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+            hp.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+
+            header_text = project.project_name
+            if enterprise:
+                header_text = f"{enterprise.name} — {project.project_name}"
+            if watermark:
+                header_text = f"【鲜标智投试用版】{header_text}"
+
+            run = hp.add_run(header_text)
+            run.font.size = Pt(9)
+            run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+            # 页脚（页码）
+            footer = section.footer
+            footer.is_linked_to_previous = False
+            fp = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+            fp.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+
+            # 通过 XML 插入页码字段
+            from docx.oxml.ns import qn
+            from docx.oxml import OxmlElement
+            run = fp.add_run()
+            fldChar1 = OxmlElement("w:fldChar")
+            fldChar1.set(qn("w:fldCharType"), "begin")
+            run._element.append(fldChar1)
+
+            instrText = OxmlElement("w:instrText")
+            instrText.set(qn("xml:space"), "preserve")
+            instrText.text = " PAGE "
+            run._element.append(instrText)
+
+            fldChar2 = OxmlElement("w:fldChar")
+            fldChar2.set(qn("w:fldCharType"), "end")
+            run._element.append(fldChar2)
+
+            run.font.size = Pt(9)
+            run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
 
     def _render_cover(self, doc: Document, project: BidProject, enterprise: Optional[Enterprise]):
         """渲染封面"""

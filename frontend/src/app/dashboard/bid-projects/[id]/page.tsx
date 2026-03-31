@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
+import RiskReportPanel from "@/components/business/risk-report-panel";
 
 interface TenderRequirement {
   id: number;
@@ -352,6 +353,9 @@ export default function BidProjectDetailPage() {
           )}
         </Card>
       )}
+
+      {/* 风险报告 */}
+      <RiskReportPanel projectId={projectId} />
 
       {/* 招标文件上传 & 解析 */}
       <Card>
