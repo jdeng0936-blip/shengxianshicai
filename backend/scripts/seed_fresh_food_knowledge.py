@@ -166,9 +166,70 @@ async def seed():
         await session.commit()
         print(f"种子数据导入完成: {total_docs} 份文档, {total_clauses} 条条款")
 
-        # ===== 第二步: 生成向量嵌入 =====
+        # ===== 第二步: 中标案例种子数据 =====
+        print("\n导入中标案例...")
+        await seed_bid_cases(session)
+
+        # ===== 第三步: 生成向量嵌入 =====
         print("\n开始生成向量嵌入...")
         await generate_embeddings(session)
+
+
+async def seed_bid_cases(session):
+    """插入中标案例种子数据"""
+    from app.models.standard import BidCase
+
+    result = await session.execute(select(BidCase).limit(1))
+    if result.scalar_one_or_none():
+        print("bid_case 表已有数据，跳过")
+        return
+
+    cases = [
+        BidCase(
+            title="XX市第一中学2025年食材配送项目",
+            customer_type="school",
+            buyer_name="XX市第一中学",
+            bid_amount="480000",
+            discount_rate="8%",
+            summary="中标亮点：自建冷链中心距学校3km，5辆冷藏车保障6:00前到校；"
+                    "营养师持证上岗，每周制定带量食谱；农残快检100%覆盖，检测报告同步家长微信群",
+            tenant_id=0, created_by=0,
+        ),
+        BidCase(
+            title="XX市人民医院2025年食材配送项目",
+            customer_type="hospital",
+            buyer_name="XX市人民医院",
+            bid_amount="1200000",
+            discount_rate="6%",
+            summary="中标亮点：24小时应急配送能力；治疗膳食覆盖8种特殊饮食(糖尿病/肾病/流质等)；"
+                    "HACCP+ISO22000双认证；配送人员每日体温检测+核酸",
+            tenant_id=0, created_by=0,
+        ),
+        BidCase(
+            title="XX区政府机关食堂2025年食材配送项目",
+            customer_type="government",
+            buyer_name="XX区机关事务管理局",
+            bid_amount="650000",
+            discount_rate="10%",
+            summary="中标亮点：全程可追溯系统对接政务平台；99.8%准时率；"
+                    "价格透明度高(每日公示采购价与市场价对比)；零投诉记录",
+            tenant_id=0, created_by=0,
+        ),
+        BidCase(
+            title="XX科技园企业食堂2025年食材配送项目",
+            customer_type="enterprise",
+            buyer_name="XX科技园管委会",
+            bid_amount="350000",
+            discount_rate="12%",
+            summary="中标亮点：菜品丰富度高(每周不重样)；VIP会议餐定制服务；"
+                    "月度满意度调查≥95%；ERP系统自动对账",
+            tenant_id=0, created_by=0,
+        ),
+    ]
+    for case in cases:
+        session.add(case)
+    await session.commit()
+    print(f"中标案例导入完成: {len(cases)} 条")
 
 
 async def generate_embeddings(session):

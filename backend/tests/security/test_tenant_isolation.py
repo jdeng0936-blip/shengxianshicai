@@ -82,6 +82,27 @@ async def test_cross_tenant_read_credential(async_client: AsyncClient, auth_head
 
 
 @pytest.mark.asyncio
+async def test_cross_tenant_risk_report(async_client: AsyncClient, auth_headers: dict):
+    """攻击向量 7: 跨租户生成风险报告"""
+    resp = await async_client.post("/api/v1/bid-projects/999999/risk-report", headers=auth_headers)
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_export_check(async_client: AsyncClient, auth_headers: dict):
+    """攻击向量 8: 跨租户导出检查"""
+    resp = await async_client.get("/api/v1/bid-projects/999999/export-check", headers=auth_headers)
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_readiness_check(async_client: AsyncClient, auth_headers: dict):
+    """攻击向量 9: 跨租户企业完整度检查"""
+    resp = await async_client.get("/api/v1/enterprises/999999/readiness", headers=auth_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_project_list_only_own_tenant(async_client: AsyncClient, auth_headers: dict):
     """列表接口只返回当前租户数据"""
     # 创建一个项目
