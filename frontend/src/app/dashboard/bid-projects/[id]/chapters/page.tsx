@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,11 +44,14 @@ const STATUS_BADGE: Record<string, { label: string; variant: "default" | "second
 
 export default function ChaptersEditorPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const projectId = params.id as string;
+  const highlightChapterId = searchParams.get("highlight");
 
   const [chapters, setChapters] = useState<BidChapter[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState("");
+  const [highlightActive, setHighlightActive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generatingAll, setGeneratingAll] = useState(false);
@@ -78,6 +81,24 @@ export default function ChaptersEditorPage() {
   useEffect(() => {
     fetchChapters();
   }, [fetchChapters]);
+
+  // 风险报告跳转高亮：自动选中目标章节并高亮
+  useEffect(() => {
+    if (!highlightChapterId || chapters.length === 0) return;
+    const target = chapters.find((ch) => String(ch.id) === highlightChapterId);
+    if (!target) return;
+    setSelectedId(target.id);
+    setEditContent(target.content || "");
+    setHighlightActive(true);
+    // 滚动到目标章节
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`chapter-${target.id}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    // 3 秒后淡出高亮
+    const timer = setTimeout(() => setHighlightActive(false), 3000);
+    return () => clearTimeout(timer);
+  }, [highlightChapterId, chapters]);
 
   const handleInitChapters = async () => {
     try {
@@ -386,11 +407,16 @@ export default function ChaptersEditorPage() {
                 return (
                   <button
                     key={ch.id}
+                    id={`chapter-${ch.id}`}
                     onClick={() => handleSelectChapter(ch)}
-                    className={`flex w-full items-start gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    className={`flex w-full items-start gap-2 rounded-md px-3 py-2 text-left text-sm transition-all duration-500 ${
                       isSelected
                         ? "bg-slate-100 text-slate-900"
                         : "text-slate-600 hover:bg-slate-50"
+                    } ${
+                      highlightActive && String(ch.id) === highlightChapterId
+                        ? "ring-2 ring-red-400 ring-offset-1"
+                        : ""
                     }`}
                   >
                     <div className="flex-1 min-w-0">

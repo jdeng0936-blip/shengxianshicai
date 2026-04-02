@@ -30,5 +30,5 @@ async def test_login_wrong_password(async_client):
 @pytest.mark.asyncio
 async def test_protected_route_without_token(async_client):
     """无 Token 访问受保护路由 → 401/403"""
-    resp = await async_client.get("/api/v1/projects")
+    resp = await async_client.get("/api/v1/bid-projects")
     assert resp.status_code in (401, 403)

@@ -1,0 +1,309 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775115986525,
+  "projectRoot": "/Users/hycdq2026/Desktop/shangxianshicai/-",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "scripts"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "backend": {
+      "path": "backend",
+      "purpose": null,
+      "fileCount": 11,
+      "lastAccessed": 1775115986500,
+      "keyFiles": [
+        "Dockerfile",
+        "alembic.ini",
+        "llm_registry.yaml",
+        "prompts_registry.yaml",
+        "pytest.ini"
+      ]
+    },
+    "docker": {
+      "path": "docker",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775115986501,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 9,
+      "lastAccessed": 1775115986501,
+      "keyFiles": [
+        "2026中国生鲜食品供应链法规图谱与智能化顶级标书生成平台战略蓝皮书.docx",
+        "BidEngine-Implementation-Plan.docx",
+        "BidEngine_通用投标AI框架_合并实施方案.md",
+        "README.md",
+        "TROUBLESHOOTING.md"
+      ]
+    },
+    "frontend": {
+      "path": "frontend",
+      "purpose": null,
+      "fileCount": 15,
+      "lastAccessed": 1775115986507,
+      "keyFiles": [
+        "Dockerfile",
+        "README.md",
+        "components.json",
+        "eslint.config.mjs",
+        "next-env.d.ts"
+      ]
+    },
+    "nginx": {
+      "path": "nginx",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775115986508,
+      "keyFiles": [
+        "nginx.conf"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 2,
+      "lastAccessed": 1775115986508,
+      "keyFiles": [
+        "db_backup.sh",
+        "db_restore.sh"
+      ]
+    },
+    "backend/app": {
+      "path": "backend/app",
+      "purpose": "Application code",
+      "fileCount": 2,
+      "lastAccessed": 1775115986509,
+      "keyFiles": [
+        "__init__.py",
+        "main.py"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "backend/tests/test_bid_compliance.py",
+      "accessCount": 8,
+      "lastAccessed": 1775116159803,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/models/bid_project.py",
+      "accessCount": 7,
+      "lastAccessed": 1775119919771,
+      "type": "directory"
+    },
+    {
+      "path": "backend/app/services/bid_generation_service.py",
+      "accessCount": 5,
+      "lastAccessed": 1775118810503,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/generation/writer.py",
+      "accessCount": 5,
+      "lastAccessed": 1775118911797,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/test_generation_retriever.py",
+      "accessCount": 4,
+      "lastAccessed": 1775117634027,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/generation/compliance_gate.py",
+      "accessCount": 4,
+      "lastAccessed": 1775119335851,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/generation/reviewer.py",
+      "accessCount": 4,
+      "lastAccessed": 1775119947218,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/generation/formatter.py",
+      "accessCount": 4,
+      "lastAccessed": 1775119969169,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/test_health.py",
+      "accessCount": 3,
+      "lastAccessed": 1775116133604,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/generation/planner.py",
+      "accessCount": 3,
+      "lastAccessed": 1775117463509,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/generation/retriever.py",
+      "accessCount": 3,
+      "lastAccessed": 1775117480004,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/generation/polish_pipeline.py",
+      "accessCount": 3,
+      "lastAccessed": 1775119540711,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/retriever.py",
+      "accessCount": 2,
+      "lastAccessed": 1775117402093,
+      "type": "file"
+    },
+    {
+      "path": "backend/app",
+      "accessCount": 2,
+      "lastAccessed": 1775117402795,
+      "type": "directory"
+    },
+    {
+      "path": "backend/app/services/bid_compliance_service.py",
+      "accessCount": 2,
+      "lastAccessed": 1775119047045,
+      "type": "file"
+    },
+    {
+      "path": "backend/prompts_registry.yaml",
+      "accessCount": 2,
+      "lastAccessed": 1775119496829,
+      "type": "directory"
+    },
+    {
+      "path": "backend/tests/conftest.py",
+      "accessCount": 1,
+      "lastAccessed": 1775116014690,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services",
+      "accessCount": 1,
+      "lastAccessed": 1775116440812,
+      "type": "directory"
+    },
+    {
+      "path": "backend/app/services/embedding_service.py",
+      "accessCount": 1,
+      "lastAccessed": 1775116488968,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/generation/__init__.py",
+      "accessCount": 1,
+      "lastAccessed": 1775116527324,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/bid_chapter_engine.py",
+      "accessCount": 1,
+      "lastAccessed": 1775117401206,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/core/llm_selector.py",
+      "accessCount": 1,
+      "lastAccessed": 1775117407999,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/models",
+      "accessCount": 1,
+      "lastAccessed": 1775117409527,
+      "type": "directory"
+    },
+    {
+      "path": "backend/llm_registry.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1775117413989,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/test_generation_planner.py",
+      "accessCount": 1,
+      "lastAccessed": 1775117511434,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/core/prompt_manager.py",
+      "accessCount": 1,
+      "lastAccessed": 1775118798218,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/test_generation_writer.py",
+      "accessCount": 1,
+      "lastAccessed": 1775118893078,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/test_generation_compliance_gate.py",
+      "accessCount": 1,
+      "lastAccessed": 1775119140530,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/test_generation_polish_pipeline.py",
+      "accessCount": 1,
+      "lastAccessed": 1775119576172,
+      "type": "file"
+    },
+    {
+      "path": ".antigravity_rules.md",
+      "accessCount": 1,
+      "lastAccessed": 1775119754122,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/test_generation_reviewer.py",
+      "accessCount": 1,
+      "lastAccessed": 1775119997951,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/test_generation_formatter.py",
+      "accessCount": 1,
+      "lastAccessed": 1775120025058,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

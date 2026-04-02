@@ -12,8 +12,8 @@ services:
       POSTGRES_DB: fresh_bid_platform
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    # ports:
-    #   - "127.0.0.1:5433:5432"
+    ports:
+      - "127.0.0.1:5435:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -27,8 +27,8 @@ services:
     image: redis/redis-stack-server:latest
     container_name: fresh-bid-redis
     restart: unless-stopped
-    # ports:
-    #   - "127.0.0.1:6380:6379"
+    ports:
+      - "127.0.0.1:6380:6379"
     volumes:
       - redis_data:/data
 

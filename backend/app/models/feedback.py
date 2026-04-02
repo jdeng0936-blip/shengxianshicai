@@ -4,6 +4,8 @@
 采纳/修改/拒绝 差分记录，作为 SFT/RLHF 数据飞轮的核心正负样本积累。
 投标文件的质量改进飞轮：AI生成→用户修改→差异度量化→模型微调参考。
 """
+from typing import Optional
+
 from sqlalchemy import String, Integer, Float, Text, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,16 +29,16 @@ class FeedbackLog(AuditMixin, Base):
     original_text: Mapped[str] = mapped_column(
         Text, nullable=False, comment="AI 原始生成文本"
     )
-    modified_text: Mapped[str | None] = mapped_column(
+    modified_text: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, comment="用户修改后文本（reject 时可空）"
     )
     action: Mapped[str] = mapped_column(
         String(20), nullable=False, comment="用户动作: accept / edit / reject"
     )
-    comment: Mapped[str | None] = mapped_column(
+    comment: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, comment="用户备注"
     )
-    diff_ratio: Mapped[float | None] = mapped_column(
+    diff_ratio: Mapped[Optional[float]] = mapped_column(
         Float, nullable=True, comment="编辑差异度 0~1（仅 edit 动作有值）"
     )
 

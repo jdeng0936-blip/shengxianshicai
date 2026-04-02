@@ -13,6 +13,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
     # --- 应用 ---
@@ -73,6 +74,10 @@ class Settings(BaseSettings):
     QUOTATION_MAX_DISCOUNT: float = 0.15
     # 资质证书到期提前预警天数
     CREDENTIAL_EXPIRY_WARN_DAYS: int = 90
+
+    # --- 系统工具 ---
+    SOFFICE_PATH: str = "soffice"
+    ADMIN_INIT_PASSWORD: str = "admin123"
 
 
 # 全局单例

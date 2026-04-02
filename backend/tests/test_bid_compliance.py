@@ -130,6 +130,7 @@ class TestQualificationCheck:
     """资格要求检查逻辑"""
 
     def setup_method(self):
+        BidComplianceService, _, _ = _load_compliance()
         self.svc = BidComplianceService(session=None)
 
     def test_haccp_matched(self):
@@ -159,6 +160,7 @@ class TestScoringCheck:
     """评分标准覆盖率检查"""
 
     def setup_method(self):
+        BidComplianceService, _, _ = _load_compliance()
         self.svc = BidComplianceService(session=None)
 
     def test_high_coverage_passes(self):
