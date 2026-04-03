@@ -182,6 +182,12 @@ class BidChapter(AuditMixin, Base):
     edit_ratio: Mapped[float] = mapped_column(
         Float, nullable=True, comment="用户编辑占比(0~1)，由反馈飞轮写入"
     )
+    ai_ratio: Mapped[float] = mapped_column(
+        Float, default=0.0, comment="AI原创占比(0~1)，高风险字段替换后降低"
+    )
+    source_tags: Mapped[str] = mapped_column(
+        Text, default="", comment="内容来源标签，逗号分隔: ai_generated,company_db,template,credential"
+    )
 
     # --- 关联 ---
     project = relationship("BidProject", back_populates="chapters")

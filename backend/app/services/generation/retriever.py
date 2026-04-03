@@ -86,6 +86,114 @@ async def _retrieve_single_chapter(
     )
 
 
+@dataclass
+class EnterpriseContext:
+    """从 DB 加载的企业结构化数据（高风险字段，不可由 LLM 编造）"""
+    enterprise_name: str = ""
+    cold_chain_vehicles: int = 0
+    warehouse_area: float = 0.0
+    employee_count: int = 0
+    credential_list: list[dict] = field(default_factory=list)
+    # 格式: [{"type": "food_license", "name": "食品经营许可证", "cert_no": "...", "valid_until": "..."}]
+
+    def to_prompt_block(self) -> str:
+        """构建带不可篡改约束的 prompt 文本块"""
+        lines = [
+            "== 投标企业结构化数据（以下数值从企业数据库提取，严禁修改或编造） ==",
+            f"企业名称: {self.enterprise_name}",
+            f"冷链运输车辆数: {self.cold_chain_vehicles} 辆",
+        ]
+        if self.warehouse_area > 0:
+            lines.append(f"仓储面积: {self.warehouse_area} 平方米")
+        if self.employee_count > 0:
+            lines.append(f"员工人数: {self.employee_count} 人")
+        if self.credential_list:
+            lines.append("持有资质证书:")
+            for cred in self.credential_list:
+                name = cred.get("name", "")
+                cert_no = cred.get("cert_no", "")
+                valid = cred.get("valid_until", "")
+                line = f"  - {name}"
+                if cert_no:
+                    line += f"（编号: {cert_no}）"
+                if valid:
+                    line += f"（有效期至: {valid}）"
+                lines.append(line)
+        lines.append("⚠️ 以上数据为确定值，正文中引用时必须保持一致，不得自行编造或修改数字。")
+        return "\n".join(lines)
+
+    def to_validation_dict(self) -> dict:
+        """返回用于后置校验的关键字段字典"""
+        d: dict = {"enterprise_name": self.enterprise_name}
+        if self.cold_chain_vehicles > 0:
+            d["cold_chain_vehicles"] = self.cold_chain_vehicles
+        if self.warehouse_area > 0:
+            d["warehouse_area"] = self.warehouse_area
+        if self.employee_count > 0:
+            d["employee_count"] = self.employee_count
+        for cred in self.credential_list:
+            if cred.get("cert_no"):
+                d[f"cert_{cred['type']}"] = cred["cert_no"]
+        return d
+
+
+async def fetch_enterprise_context(
+    session: AsyncSession,
+    tenant_id: int,
+    enterprise_id: int,
+) -> EnterpriseContext:
+    """从 DB 加载企业 + 资质结构化数据（高风险字段注入源）
+
+    Args:
+        session: 数据库会话
+        tenant_id: 租户 ID
+        enterprise_id: 关联企业 ID
+
+    Returns:
+        EnterpriseContext 含企业名、车辆数、资质列表等
+    """
+    from sqlalchemy import select
+
+    ctx = EnterpriseContext()
+
+    try:
+        from app.models.enterprise import Enterprise
+        result = await session.execute(
+            select(Enterprise).where(
+                Enterprise.id == enterprise_id,
+                Enterprise.tenant_id == tenant_id,
+            )
+        )
+        ent = result.scalar_one_or_none()
+        if ent:
+            ctx.enterprise_name = getattr(ent, "name", "") or ""
+            ctx.cold_chain_vehicles = getattr(ent, "cold_chain_vehicles", 0) or 0
+            ctx.warehouse_area = getattr(ent, "warehouse_area", 0.0) or 0.0
+            ctx.employee_count = getattr(ent, "employee_count", 0) or 0
+    except Exception as e:
+        logger.warning("加载企业数据失败: %s", e)
+
+    try:
+        from app.models.credential import Credential
+        cred_result = await session.execute(
+            select(Credential).where(
+                Credential.tenant_id == tenant_id,
+            )
+        )
+        creds = cred_result.scalars().all()
+        for c in creds:
+            ctx.credential_list.append({
+                "type": getattr(c, "cred_type", "") or "",
+                "name": getattr(c, "name", "") or "",
+                "cert_no": getattr(c, "cert_no", "") or "",
+                "valid_until": str(getattr(c, "valid_until", "")) if getattr(c, "valid_until", None) else "",
+            })
+    except Exception as e:
+        logger.warning("加载资质数据失败: %s", e)
+
+    return ctx
+
+
 async def retrieve_context(
     session: AsyncSession,
     tenant_id: int,

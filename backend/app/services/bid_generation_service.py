@@ -33,6 +33,8 @@ from app.services.bid_chapter_engine import (
     get_chapter_templates,
     map_requirements_to_chapters,
     build_chapter_outline,
+    is_quotation_chapter,
+    get_quotation_template,
 )
 from app.services.bid_project_service import BidProjectService
 
@@ -93,6 +95,96 @@ def _build_enterprise_info(enterprise: Enterprise, credentials: list = None) -> 
             lines.append(f"- {'，'.join(parts)}")
 
     return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════
+# P0 安全红线：高风险字段占位符替换（严禁 LLM 编造）
+# ══════════════════════════════════════════════════════════════
+
+# 高风险字段映射：占位符 → (enterprise 属性名, 友好名称)
+HIGH_RISK_FIELDS_MAP = {
+    "{{企业名称}}": ("name", "企业名称"),
+    "{{公司名称}}": ("name", "企业名称"),
+    "{{统一社会信用代码}}": ("credit_code", "统一社会信用代码"),
+    "{{冷链车辆数}}": ("cold_chain_vehicles", "冷链车辆数量"),
+    "{{车辆数量}}": ("cold_chain_vehicles", "冷链车辆数量"),
+    "{{常温车辆数}}": ("normal_vehicles", "常温车辆数量"),
+    "{{仓储面积}}": ("warehouse_area", "仓储面积"),
+    "{{冷库面积}}": ("cold_storage_area", "冷库面积"),
+    "{{员工人数}}": ("employee_count", "员工人数"),
+    "{{注册资本}}": ("registered_capital", "注册资本"),
+    "{{服务客户数}}": ("service_customers", "服务客户数"),
+}
+
+# LLM System Prompt 安全约束（追加到所有生成场景）
+_SAFETY_CONSTRAINT = (
+    "\n\n【安全约束 — 绝对红线】\n"
+    "禁止推断或编造以下字段：资质证书编号、车辆数量、仓储面积、人员姓名、合同金额、业绩数据。\n"
+    "如信息不在提供的企业数据中，必须使用{{字段名}}占位符（如{{冷链车辆数}}、{{仓储面积}}），"
+    "绝不允许自行填写或推断数字。"
+)
+
+
+def replace_high_risk_fields(
+    content: str,
+    enterprise: Optional[Enterprise] = None,
+    credentials: list = None,
+) -> str:
+    """高风险字段后置替换：用 DB 真实值替换占位符
+
+    规则:
+      - 有 DB 值 → 替换为真实值
+      - 无 DB 值 → 保留 【请填写XXX】 提示，绝不推断
+      - 资质证书编号从 credentials 列表中按名称模糊匹配
+
+    Args:
+        content: LLM 生成的原始内容
+        enterprise: Enterprise 实例（可为 None）
+        credentials: Credential 列表（可为 None）
+
+    Returns:
+        替换后的内容
+    """
+    if not content:
+        return content
+
+    # 1. 替换企业字段占位符
+    for placeholder, (attr_name, friendly_name) in HIGH_RISK_FIELDS_MAP.items():
+        if placeholder in content:
+            value = getattr(enterprise, attr_name, None) if enterprise else None
+            if value is not None and str(value).strip():
+                # 数字类型加单位
+                replacement = str(value)
+                if attr_name in ("cold_chain_vehicles", "normal_vehicles"):
+                    replacement = f"{value}辆"
+                elif attr_name in ("warehouse_area", "cold_storage_area"):
+                    replacement = f"{value}㎡"
+                elif attr_name == "employee_count":
+                    replacement = f"{value}人"
+                elif attr_name == "registered_capital":
+                    replacement = f"{value}万元"
+                elif attr_name == "service_customers":
+                    replacement = f"{value}家"
+                content = content.replace(placeholder, replacement)
+            else:
+                content = content.replace(placeholder, f"【请填写{friendly_name}】")
+
+    # 2. 替换资质证书编号占位符
+    if credentials:
+        for cred in credentials:
+            cert_placeholder = f"{{{{{cred.cred_name}编号}}}}"
+            if cert_placeholder in content and cred.cred_no:
+                content = content.replace(cert_placeholder, cred.cred_no)
+
+    # 3. 兜底：捕获任何残留的 {{xxx}} 占位符，标记为待填写
+    import re
+    content = re.sub(
+        r"\{\{([^}]+)\}\}",
+        lambda m: f"【请填写{m.group(1)}】",
+        content,
+    )
+
+    return content
 
 
 def _build_images_info(images: list[ImageAsset]) -> str:
@@ -241,6 +333,17 @@ class BidGenerationService:
         if chapter.source not in ("ai", "draft", "template"):
             return chapter
 
+        # P0: 报价类章节强制空表策略 — 不调用 LLM
+        if is_quotation_chapter(chapter.chapter_no, chapter.title):
+            chapter.content = get_quotation_template()
+            chapter.source = "template"
+            chapter.status = "generated"
+            chapter.source_tags = "template"
+            chapter.ai_ratio = 0.0
+            await self.session.commit()
+            await self.session.refresh(chapter)
+            return chapter
+
         # 加载企业信息 + 资质证书
         enterprise_info = "企业信息未填写"
         if project.enterprise_id:
@@ -351,11 +454,18 @@ class BidGenerationService:
         gateway = DesensitizeGateway(tenant_id=tenant_id)
         masked_prompt, desens_mapping = gateway.mask(prompt)
 
+        # LLM 参数通过 LLMSelector 获取（严禁硬编码）
+        gen_temperature = LLMSelector.get_temperature("bid_section_generate")
+        gen_max_tokens = LLMSelector.get_max_tokens("bid_section_generate")
+
         response = await client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": masked_prompt}],
-            temperature=task_config.get("temperature", 0.3),
-            max_tokens=task_config.get("max_tokens", 8192),
+            messages=[
+                {"role": "system", "content": _SAFETY_CONSTRAINT},
+                {"role": "user", "content": masked_prompt},
+            ],
+            temperature=gen_temperature,
+            max_tokens=gen_max_tokens,
         )
 
         content = gateway.unmask(
@@ -375,12 +485,30 @@ class BidGenerationService:
             content, chapter_meta, enterprise
         )
 
+        # ===== P0 安全红线：高风险字段后置替换 =====
+        ai_raw_content = content  # 保留 AI 原始输出用于 ai_ratio 计算
+        creds_for_replace = creds if project.enterprise_id else None
+        ent_for_replace = enterprise if project.enterprise_id else None
+        content = replace_high_risk_fields(content, ent_for_replace, creds_for_replace)
+
+        # 计算 ai_ratio（替换越多，AI 原创占比越低）
+        orig_len = len(ai_raw_content)
+        replaced_len = len(content)
+        ai_ratio = min(1.0, replaced_len / orig_len) if orig_len > 0 else 0.0
+
+        # 确定 source_tags
+        source_tags = ["ai_generated"]
+        if ent_for_replace:
+            source_tags.append("company_db")
+
         # 更新章节
         chapter.content = content
         chapter.source = "ai"
         chapter.status = "generated"
         chapter.ai_model_used = model
         chapter.ai_prompt_version = "v2_with_images"
+        chapter.ai_ratio = ai_ratio
+        chapter.source_tags = ",".join(source_tags)
         # 记录 Critic 审查元数据
         if hasattr(chapter, "meta") and isinstance(chapter.meta, dict):
             chapter.meta["critic"] = critic_meta

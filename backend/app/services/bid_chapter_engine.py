@@ -100,6 +100,41 @@ CUSTOMER_EMPHASIS: dict[str, dict[str, str]] = {
 }
 
 
+# 报价类章节类型标识 — 匹配到则跳过 LLM，直接返回空表模板
+QUOTATION_CHAPTER_TYPES = ["quotation", "price_table", "报价表", "报价单", "报价明细", "报价文件"]
+
+# 报价章节空表模板
+_QUOTATION_EMPTY_TABLE = """## 报价文件
+
+> 本章节数据由报价引擎自动生成，不使用 AI 撰写。
+
+| 序号 | 品类 | 品名 | 规格 | 单位 | 单价(元) | 备注 |
+|------|------|------|------|------|----------|------|
+| 1    |      |      |      |      |          |      |
+| 2    |      |      |      |      |          |      |
+| 3    |      |      |      |      |          |      |
+
+*报价数据请在「报价管理」模块中填写，导出时将自动注入本章节。*
+"""
+
+
+def is_quotation_chapter(chapter_no: str, title: str) -> bool:
+    """判断是否为报价类章节（匹配则走空表策略，不调用 LLM）"""
+    title_lower = title.lower()
+    for keyword in QUOTATION_CHAPTER_TYPES:
+        if keyword in title_lower:
+            return True
+    # 第八章固定为报价文件
+    if chapter_no == "第八章":
+        return True
+    return False
+
+
+def get_quotation_template() -> str:
+    """返回报价章节空表模板"""
+    return _QUOTATION_EMPTY_TABLE
+
+
 def get_chapter_templates(customer_type: Optional[str] = None) -> list[dict]:
     """获取标准章节模板列表，带客户类型侧重描述"""
     chapters = []
