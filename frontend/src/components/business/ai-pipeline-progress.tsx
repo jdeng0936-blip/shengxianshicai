@@ -16,52 +16,52 @@ export interface PipelineLayer {
 
 export const PIPELINE_LAYERS: PipelineLayer[] = [
   {
-    id: "rag_filter",
-    name: "RAG 相关性过滤",
-    desc: "按章节关键词检索并评分，保留高相关知识片段",
-    icon: "🔍",
+    id: "data_load",
+    name: "项目数据加载",
+    desc: "加载项目信息、企业资质、招标要求与评分标准",
+    icon: "📋",
     color: "blue",
   },
   {
-    id: "few_shot",
-    name: "Few-Shot 范文注入",
-    desc: "注入专家历史规程，引导输出风格与专业深度",
-    icon: "📖",
+    id: "rag_retrieve",
+    name: "RAG 知识检索",
+    desc: "向量相似度检索法规条款、历史案例与模板片段",
+    icon: "🔍",
     color: "violet",
   },
   {
-    id: "calc_inject",
-    name: "计算推导注入",
-    desc: "报价计算/资质核验/配送方案完整推导文本化，嵌入正文",
-    icon: "🧮",
+    id: "prompt_build",
+    name: "Prompt 策略构建",
+    desc: "评分驱动模板选择、变量注入与专项要求拼装",
+    icon: "🧩",
     color: "cyan",
   },
   {
-    id: "baseline_align",
-    name: "基线参数对齐",
-    desc: "核心章节优先生成，提取参数基线注入后续章节",
-    icon: "📐",
+    id: "llm_generate",
+    name: "AI 草稿生成",
+    desc: "调用大模型生成章节初稿，脱敏处理后还原",
+    icon: "✍️",
     color: "teal",
   },
   {
-    id: "multi_expand",
-    name: "多轮深度扩写",
-    desc: "首轮生成后自动检测字数，不足则触发补充扩写",
-    icon: "✍️",
+    id: "critic_review",
+    name: "Critic 质量审查",
+    desc: "五项评分自评，低分项触发定向重写修复",
+    icon: "🔬",
     color: "green",
   },
   {
-    id: "critic_eval",
-    name: "Critic 五项自评",
-    desc: "AI 安全专家角色逐项打分，触发定向重写",
-    icon: "🔬",
+    id: "safety_replace",
+    name: "安全红线校验",
+    desc: "高风险字段后置替换，严禁 LLM 编造数据",
+    icon: "🛡️",
     color: "amber",
   },
   {
-    id: "consistency",
-    name: "跨章节一致性扫描",
-    desc: "检测数据矛盾（价格/资质/配送范围/人员配置等），自动修正",
-    icon: "🛡️",
+    id: "persist",
+    name: "持久化存储",
+    desc: "写入数据库、更新章节状态与来源标签",
+    icon: "💾",
     color: "rose",
   },
 ];
@@ -166,9 +166,9 @@ export default function AIPipelineProgress({
           />
         </div>
         <div className="flex justify-between text-xs text-slate-500">
-          <span>RAG 检索</span>
+          <span>数据加载</span>
           <span className="text-slate-400 font-medium">{progress}%</span>
-          <span>一致性修正</span>
+          <span>持久化</span>
         </div>
       </div>
 

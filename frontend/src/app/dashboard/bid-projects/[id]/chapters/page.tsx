@@ -21,6 +21,8 @@ import {
 import Link from "next/link";
 import api from "@/lib/api";
 import ChapterFeedback from "@/components/business/chapter-feedback";
+import AIPipelineProgress from "@/components/business/ai-pipeline-progress";
+import { useGenerationSocket } from "@/hooks/useGenerationSocket";
 
 interface BidChapter {
   id: number;
@@ -71,6 +73,10 @@ export default function ChaptersEditorPage() {
   const [rewriting, setRewriting] = useState(false);
   const [customInstruction, setCustomInstruction] = useState("");
   const [customRewriting, setCustomRewriting] = useState(false);
+
+  // WebSocket 实时管线进度
+  const { state: pipelineState, connect: wsConnect, disconnect: wsDisconnect } =
+    useGenerationSocket(projectId);
 
   const fetchChapters = useCallback(async () => {
     try {
@@ -214,6 +220,7 @@ export default function ChaptersEditorPage() {
   const handleGenerateAll = async () => {
     setGeneratingAll(true);
     setProgress({ completed: 0, total: 0, failed: 0 });
+    wsConnect(); // 连接 WebSocket 接收管线级进度
 
     try {
       const response = await fetch(
@@ -263,6 +270,7 @@ export default function ChaptersEditorPage() {
     } finally {
       setGeneratingAll(false);
       setProgress(null);
+      wsDisconnect();
     }
   };
 
@@ -443,25 +451,8 @@ export default function ChaptersEditorPage() {
         </div>
       )}
 
-      {/* 进度条 */}
-      {generatingAll && progress && progress.total > 0 && (
-        <div className="rounded-lg border bg-blue-50 p-3">
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-blue-700">
-              正在生成... {progress.completed}/{progress.total}
-              {progress.failed > 0 && (
-                <span className="ml-2 text-red-600">（{progress.failed} 失败）</span>
-              )}
-            </span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-blue-200">
-            <div
-              className="h-full rounded-full bg-blue-600 transition-all"
-              style={{ width: `${(progress.completed / progress.total) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
+      {/* AI 七层管线实时进度面板 */}
+      {generatingAll && <AIPipelineProgress state={pipelineState} />}
 
       {chapters.length > 0 && (
         <div className="flex gap-4" style={{ height: "calc(100vh - 220px)" }}>

@@ -311,9 +311,20 @@ class BidGenerationService:
         return chapters
 
     async def generate_single_chapter(
-        self, project_id: int, chapter_id: int, tenant_id: int
+        self, project_id: int, chapter_id: int, tenant_id: int,
+        on_progress=None,
     ) -> BidChapter:
-        """生成单个章节的内容"""
+        """生成单个章节的内容
+
+        Args:
+            on_progress: 可选的异步回调 async (phase: str, detail: str) -> None,
+                         用于向 WebSocket 广播节点级进度。
+        """
+        async def _emit(phase: str, detail: str = ""):
+            if on_progress:
+                await on_progress(phase, detail)
+
+        await _emit("data_load", "加载项目与企业数据")
         # 加载项目及关联数据
         svc = BidProjectService(self.session)
         project = await svc.get_project(project_id, tenant_id)
@@ -392,6 +403,7 @@ class BidGenerationService:
         )
 
         # RAG 检索
+        await _emit("rag_retrieve", "知识库向量检索")
         rag_query = f"{chapter.title} 生鲜食材配送 {project.customer_type or ''}"
         rag_context = await self._rag_retrieve(rag_query, tenant_id)
 
@@ -417,6 +429,7 @@ class BidGenerationService:
         # 构建专项要求（根据章节标题匹配）
         domain_requirements = self._get_domain_requirements(chapter.title)
 
+        await _emit("prompt_build", "Prompt 策略构建")
         # 调用 LLM — 优先使用 V3 评分驱动 Prompt
         client, model = await self._get_llm_client()
 
@@ -449,6 +462,7 @@ class BidGenerationService:
                 available_images=images_info,
             )
 
+        await _emit("llm_generate", f"调用 LLM 生成草稿 ({model})")
         # 脱敏：发往云端 LLM 前 mask，返回后 unmask
         from app.services.desensitize_service import DesensitizeGateway
         gateway = DesensitizeGateway(tenant_id=tenant_id)
@@ -473,6 +487,7 @@ class BidGenerationService:
         )
 
         # ===== Critic 质量闭环（架构红线：AI 生成必须过 Critic） =====
+        await _emit("critic_review", "Critic 五项质量审查")
         from app.services.bid_critic_service import BidCriticService
 
         critic = BidCriticService()
@@ -486,6 +501,7 @@ class BidGenerationService:
         )
 
         # ===== P0 安全红线：高风险字段后置替换 =====
+        await _emit("safety_replace", "高风险字段后置替换")
         ai_raw_content = content  # 保留 AI 原始输出用于 ai_ratio 计算
         creds_for_replace = creds if project.enterprise_id else None
         ent_for_replace = enterprise if project.enterprise_id else None
@@ -501,6 +517,8 @@ class BidGenerationService:
         if ent_for_replace:
             source_tags.append("company_db")
 
+        # 持久化
+        await _emit("persist", "写入数据库")
         # 更新章节
         chapter.content = content
         chapter.source = "ai"
@@ -706,9 +724,18 @@ class BidGenerationService:
     ) -> AsyncGenerator[dict, None]:
         """
         批量生成所有 AI 章节，通过 yield 报告进度。
+        同时通过 Redis Pub/Sub 广播节点级进度事件供 WebSocket 消费。
 
         用 Semaphore 控制并发数。
         """
+        from app.core.pubsub import publish_progress
+
+        async def _pub(event: dict):
+            try:
+                await publish_progress(project_id, event)
+            except Exception:
+                pass  # Pub/Sub 失败不阻塞生成流程
+
         svc = BidProjectService(self.session)
         project = await svc.get_project(project_id, tenant_id)
         if not project:
@@ -732,21 +759,64 @@ class BidGenerationService:
         completed = 0
         failed = 0
 
+        # 广播管线启动
+        await _pub({
+            "type": "pipeline_start",
+            "project_id": project_id,
+            "total_chapters": total,
+            "chapters": [
+                {"chapter_no": ch.chapter_no, "title": ch.title}
+                for ch in ai_chapters
+            ],
+        })
+
         yield {"type": "progress", "total": total, "completed": 0, "status": "started"}
 
         semaphore = asyncio.Semaphore(settings.DOC_GEN_MAX_CONCURRENCY)
 
-        async def gen_one(ch: BidChapter) -> dict:
+        async def gen_one(ch: BidChapter, idx: int) -> dict:
             async with semaphore:
+                # 广播章节开始
+                await _pub({
+                    "type": "chapter_start",
+                    "chapter_no": ch.chapter_no,
+                    "title": ch.title,
+                    "chapter_idx": idx,
+                })
+
+                # 构建节点级进度回调
+                async def _on_progress(phase: str, detail: str = ""):
+                    await _pub({
+                        "type": "phase",
+                        "chapter_no": ch.chapter_no,
+                        "phase": phase,
+                        "detail": detail,
+                    })
+
                 try:
-                    await self.generate_single_chapter(project_id, ch.id, tenant_id)
+                    result_ch = await self.generate_single_chapter(
+                        project_id, ch.id, tenant_id,
+                        on_progress=_on_progress,
+                    )
+                    word_count = len(result_ch.content or "")
+                    await _pub({
+                        "type": "chapter_done",
+                        "chapter_no": ch.chapter_no,
+                        "status": "ok",
+                        "word_count": word_count,
+                    })
                     return {"chapter_no": ch.chapter_no, "title": ch.title, "status": "ok"}
                 except Exception as e:
+                    await _pub({
+                        "type": "chapter_error",
+                        "chapter_no": ch.chapter_no,
+                        "error": str(e),
+                    })
                     return {"chapter_no": ch.chapter_no, "title": ch.title, "status": "error", "error": str(e)}
 
         # 逐个生成并报告进度（保持顺序）
-        for ch in ai_chapters:
-            result = await gen_one(ch)
+        for idx, ch in enumerate(ai_chapters):
+            result = await gen_one(ch, idx)
             if result["status"] == "ok":
                 completed += 1
             else:
@@ -766,10 +836,14 @@ class BidGenerationService:
             project.status = final_status
             await self.session.commit()
 
-        yield {
-            "type": "done",
+        # 广播管线完成
+        done_event = {
+            "type": "pipeline_done",
             "total": total,
             "completed": completed,
             "failed": failed,
             "status": final_status,
         }
+        await _pub(done_event)
+
+        yield done_event
