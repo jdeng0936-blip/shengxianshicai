@@ -444,16 +444,16 @@ export default function ChaptersEditorPage() {
   return (
     <div className="space-y-4">
       {/* 页头 */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div className="flex items-center gap-4">
           <Link href={`/dashboard/bid-projects/${projectId}`}>
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-xl font-bold text-slate-900">投标文件章节编辑</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-slate-900">投标文件章节编辑</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {chapters.length === 0 ? (
             <Button onClick={handleInitChapters}>
               <FileText className="mr-2 h-4 w-4" />
@@ -561,9 +561,9 @@ export default function ChaptersEditorPage() {
       )}
 
       {chapters.length > 0 && (
-        <div className="flex gap-4" style={{ height: "calc(100vh - 220px)" }}>
+        <div className="flex flex-col md:flex-row gap-4" style={{ height: "calc(100vh - 220px)" }}>
           {/* 左侧章节列表 */}
-          <div className="w-72 shrink-0 overflow-y-auto rounded-lg border bg-white">
+          <div className="w-full md:w-72 shrink-0 max-h-48 md:max-h-none overflow-y-auto rounded-lg border bg-white">
             <div className="border-b p-3">
               <h3 className="text-sm font-medium text-slate-700">章节目录</h3>
             </div>

@@ -10,6 +10,8 @@ from app.services.generation.compliance_gate import (
     _check_l1_format,
     _check_l2_semantic,
     _check_l3_disqualify,
+    _check_cross_chapter_consistency,
+    _check_credential_chapter_match,
 )
 from app.services.generation.writer import DraftChapter
 
@@ -228,3 +230,110 @@ class TestCheckCompliance:
         report = await check_compliance(drafts, requirements=[])
         assert len(report.chapters) == 2
         assert report.chapters[0].chapter_no == "第三章"
+
+
+# ═══════════════════════════════════════════════════════════
+# 195号文增强 — 跨章节一致性
+# ═══════════════════════════════════════════════════════════
+
+class TestCrossChapterConsistency:
+
+    def test_consistent_data_no_issues(self):
+        """同一指标在各章节一致 → 无问题"""
+        drafts = [
+            _draft("第三章", "食材采购", "本公司冷链车辆 12 辆，配备温控设备"),
+            _draft("第五章", "配送方案", "我们拥有冷链车辆 12 辆，全程监控"),
+        ]
+        issues = _check_cross_chapter_consistency(drafts)
+        assert len(issues) == 0
+
+    def test_contradictory_data_flagged(self):
+        """同一指标不同值 → 标记矛盾"""
+        drafts = [
+            _draft("第三章", "食材采购", "本公司冷链车辆 12 辆"),
+            _draft("第五章", "配送方案", "公司现有冷链车辆 8 辆"),
+        ]
+        issues = _check_cross_chapter_consistency(drafts)
+        contradiction = [i for i in issues if "数据矛盾" in i.description]
+        assert len(contradiction) >= 1
+        assert "冷链车辆" in contradiction[0].description
+
+    def test_no_numeric_data_clean(self):
+        """章节无数值声明 → 无问题"""
+        drafts = [
+            _draft("第一章", "公司简介", "本公司专注于生鲜配送服务"),
+        ]
+        issues = _check_cross_chapter_consistency(drafts)
+        assert len(issues) == 0
+
+    def test_multiple_metrics_checked(self):
+        """多个指标各自独立检查"""
+        drafts = [
+            _draft("第三章", "食材采购", "冷链车辆 12 辆，员工人数 50 人"),
+            _draft("第五章", "配送方案", "冷链车辆 12 辆，员工人数 80 人"),
+        ]
+        issues = _check_cross_chapter_consistency(drafts)
+        # 冷链车辆一致无问题，员工人数矛盾
+        descs = " ".join(i.description for i in issues)
+        assert "员工人数" in descs
+        assert "冷链车辆" not in descs
+
+
+# ═══════════════════════════════════════════════════════════
+# 195号文增强 — 资质引用完整性
+# ═══════════════════════════════════════════════════════════
+
+class TestCredentialChapterMatch:
+
+    def test_cred_referenced_no_issues(self):
+        """资质在对应章节被引用 → 无问题"""
+        drafts = [
+            _draft("第四章", "质量管理", "本公司通过HACCP认证，建立了完善的食品安全体系"),
+        ]
+        issues = _check_credential_chapter_match(drafts, {"haccp"})
+        assert len(issues) == 0
+
+    def test_cred_not_referenced_flagged(self):
+        """资质未在对应章节引用 → 标记"""
+        drafts = [
+            _draft("第四章", "质量管理", "本公司建立了完善的管理体系"),
+        ]
+        issues = _check_credential_chapter_match(drafts, {"haccp"})
+        assert len(issues) >= 1
+        assert "haccp" in issues[0].description
+        assert "HACCP" in issues[0].suggestion
+
+    def test_no_creds_clean(self):
+        """无企业资质 → 跳过检查"""
+        drafts = [_draft("第四章", "质量管理", "内容")]
+        issues = _check_credential_chapter_match(drafts, set())
+        assert len(issues) == 0
+
+    def test_none_creds_clean(self):
+        """enterprise_cred_types=None → 跳过"""
+        drafts = [_draft()]
+        issues = _check_credential_chapter_match(drafts, None)
+        assert len(issues) == 0
+
+    def test_irrelevant_chapter_skipped(self):
+        """资质不期望出现在无关章节 → 不标记"""
+        drafts = [
+            _draft("第一章", "公司简介", "本公司成立于2015年"),
+        ]
+        issues = _check_credential_chapter_match(drafts, {"haccp"})
+        # 第一章标题不含"质量/安全/管理"，不在检查范围
+        assert len(issues) == 0
+
+    def test_integrated_in_check_compliance(self):
+        """195号文检查集成到主入口"""
+        import asyncio
+        drafts = [
+            _draft("第三章", "食材采购", "冷链车辆 12 辆" + _long_content(500)),
+            _draft("第五章", "配送方案", "冷链车辆 8 辆" + _long_content(500)),
+        ]
+        report = asyncio.get_event_loop().run_until_complete(
+            check_compliance(drafts, requirements=[])
+        )
+        # 应检测到冷链车辆矛盾
+        contradiction = [i for i in report.issues if "数据矛盾" in i.description]
+        assert len(contradiction) >= 1

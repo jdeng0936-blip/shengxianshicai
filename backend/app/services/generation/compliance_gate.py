@@ -213,6 +213,103 @@ def _check_l3_disqualify(
     return issues
 
 
+# ── L2+: 195号文增强 — 跨章节一致性 ─────────────────────
+
+# 需提取的关键数值模式（名称 → 正则）
+_NUMERIC_PATTERNS = {
+    "冷链车辆": re.compile(r'冷[链藏]车[辆量]?\s*[:：]?\s*(\d+)\s*[辆台]'),
+    "常温车辆": re.compile(r'常温车[辆量]?\s*[:：]?\s*(\d+)\s*[辆台]'),
+    "员工人数": re.compile(r'员工[人数]*\s*[:：]?\s*(\d+)\s*[人名]'),
+    "仓储面积": re.compile(r'仓[储库]\S*面积\s*[:：]?\s*(\d+)\s*[㎡平方]'),
+    "冷库面积": re.compile(r'冷库\S*面积\s*[:：]?\s*(\d+)\s*[㎡平方]'),
+    "服务客户": re.compile(r'服务\S*客户\s*[:：]?\s*(\d+)\s*[家户]'),
+    "注册资本": re.compile(r'注册资本\s*[:：]?\s*(\d+)\s*万'),
+}
+
+
+def _check_cross_chapter_consistency(
+    drafts: list[DraftChapter],
+) -> list[ComplianceIssue]:
+    """跨章节数据一致性检查（195号文合规要求）
+
+    提取各章节中的关键数值声明，检测同一指标在不同章节中是否矛盾。
+    """
+    issues = []
+    found: dict[str, list[tuple[str, str]]] = {}
+
+    for draft in drafts:
+        content = draft.content or ""
+        for metric_name, pattern in _NUMERIC_PATTERNS.items():
+            matches = pattern.findall(content)
+            for val in matches:
+                found.setdefault(metric_name, []).append((draft.chapter_no, val))
+
+    for metric_name, entries in found.items():
+        values = set(v for _, v in entries)
+        if len(values) > 1:
+            detail = ", ".join(f"{ch}={v}" for ch, v in entries)
+            issues.append(ComplianceIssue(
+                level=ComplianceLevel.L2_SEMANTIC,
+                chapter_no="跨章节",
+                description=f"数据矛盾 [{metric_name}]: {detail}",
+                suggestion=f"请统一各章节中 {metric_name} 的数值，确保前后一致",
+            ))
+
+    return issues
+
+
+# ── L2+: 195号文增强 — 资质引用完整性 ────────────────────
+
+_CRED_CHAPTER_MAP = {
+    "haccp": {"keywords": ["HACCP", "危害分析", "关键控制点"], "expected_in": ["质量", "安全", "管理"]},
+    "iso22000": {"keywords": ["ISO 22000", "ISO22000", "食品安全管理体系"], "expected_in": ["质量", "安全", "管理"]},
+    "sc": {"keywords": ["SC认证", "食品生产许可", "SC"], "expected_in": ["资质", "质量", "生产"]},
+    "cold_chain_transport": {"keywords": ["冷链", "冷藏运输", "温控"], "expected_in": ["配送", "运输", "冷链"]},
+}
+
+
+def _check_credential_chapter_match(
+    drafts: list[DraftChapter],
+    enterprise_cred_types: Optional[set[str]] = None,
+) -> list[ComplianceIssue]:
+    """资质-章节引用匹配验证（195号文合规要求）
+
+    检查企业持有的资质是否在对应章节中被正确引用。
+    """
+    issues = []
+    if not enterprise_cred_types:
+        return issues
+
+    for cred_type in enterprise_cred_types:
+        mapping = _CRED_CHAPTER_MAP.get(cred_type)
+        if not mapping:
+            continue
+
+        keywords = mapping["keywords"]
+        expected_topics = mapping["expected_in"]
+
+        relevant_chapters = [
+            d for d in drafts
+            if any(topic in (d.title or "") for topic in expected_topics)
+        ]
+
+        if not relevant_chapters:
+            continue
+
+        for draft in relevant_chapters:
+            content = draft.content or ""
+            has_ref = any(kw in content for kw in keywords)
+            if not has_ref:
+                issues.append(ComplianceIssue(
+                    level=ComplianceLevel.L2_SEMANTIC,
+                    chapter_no=draft.chapter_no,
+                    description=f"企业持有 {cred_type} 资质但 {draft.chapter_no} 未引用",
+                    suggestion=f"建议在本章节中引用 {'/'.join(keywords[:2])} 相关认证信息以增强说服力",
+                ))
+
+    return issues
+
+
 # ── 主入口 ────────────────────────────────────────────────
 
 async def check_compliance(
@@ -245,6 +342,12 @@ async def check_compliance(
     # L2: 逐章语义审查
     for draft in drafts:
         all_issues.extend(_check_l2_semantic(draft, requirements))
+
+    # L2+: 195号文增强 — 跨章节一致性
+    all_issues.extend(_check_cross_chapter_consistency(drafts))
+
+    # L2+: 195号文增强 — 资质引用完整性
+    all_issues.extend(_check_credential_chapter_match(drafts, enterprise_cred_types))
 
     # L3: 全局废标检测
     all_issues.extend(_check_l3_disqualify(drafts, requirements, enterprise_cred_types))
