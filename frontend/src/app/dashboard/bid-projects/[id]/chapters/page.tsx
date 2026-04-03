@@ -24,6 +24,7 @@ import ChapterFeedback from "@/components/business/chapter-feedback";
 import AIPipelineProgress from "@/components/business/ai-pipeline-progress";
 import CoverageHeatmap, { type CoverageReport } from "@/components/business/coverage-heatmap";
 import { useGenerationSocket } from "@/hooks/useGenerationSocket";
+import AIDetectionPanel, { type DetectionResult } from "@/components/business/ai-detection-panel";
 import { toast } from "sonner";
 
 interface BidChapter {
@@ -84,6 +85,52 @@ export default function ChaptersEditorPage() {
   const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [showCoverage, setShowCoverage] = useState(false);
+
+  // AI 检测
+  const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
+  const [detectLoading, setDetectLoading] = useState(false);
+  const [humanizing, setHumanizing] = useState(false);
+
+  const handleDetectAI = async () => {
+    if (!selectedId) return;
+    setDetectLoading(true);
+    try {
+      const res = await api.get(`/bid-projects/${projectId}/ai-detection/${selectedId}`);
+      setDetectionResult(res.data?.data || null);
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "AI 检测失败");
+    } finally {
+      setDetectLoading(false);
+    }
+  };
+
+  const handleHumanize = async () => {
+    if (!selectedId || !selectedChapter) return;
+    setHumanizing(true);
+    try {
+      const res = await api.post(`/bid-projects/${projectId}/chapters/${selectedId}/rewrite`, {
+        original_text: editContent,
+        instruction: "请对以下投标文本进行人工化润色：减少程式化衔接词（如此外、同时、因此），增加句长变化，替换重复表述，加入具体数据和细节描写，使文本更像资深业务人员的手写风格。保持原有内容要点不变。",
+      });
+      const rewritten = res.data?.data?.rewritten;
+      if (rewritten) {
+        setEditContent(rewritten);
+        toast.success("润色完成，请检查修改内容");
+        // 重新检测
+        setTimeout(() => handleDetectAI(), 500);
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "润色失败");
+    } finally {
+      setHumanizing(false);
+    }
+  };
+
+  // 切换章节时清除检测结果
+  const handleSelectChapterWithReset = (ch: BidChapter) => {
+    handleSelectChapter(ch);
+    setDetectionResult(null);
+  };
 
   const handleCheckCoverage = async () => {
     setCoverageLoading(true);
@@ -528,7 +575,7 @@ export default function ChaptersEditorPage() {
                   <button
                     key={ch.id}
                     id={`chapter-${ch.id}`}
-                    onClick={() => handleSelectChapter(ch)}
+                    onClick={() => handleSelectChapterWithReset(ch)}
                     className={`flex w-full items-start gap-2 rounded-md px-3 py-2 text-left text-sm transition-all duration-500 ${
                       isSelected
                         ? "bg-slate-100 text-slate-900"
@@ -657,6 +704,18 @@ export default function ChaptersEditorPage() {
                       onSelectionChange={setSelection}
                     />
                   </div>
+                  {/* 反 AI 检测面板 */}
+                  {selectedChapter.content && (
+                    <div className="shrink-0 border-t px-4 py-3">
+                      <AIDetectionPanel
+                        result={detectionResult}
+                        loading={detectLoading}
+                        onDetect={handleDetectAI}
+                        onHumanize={handleHumanize}
+                        humanizing={humanizing}
+                      />
+                    </div>
+                  )}
                   {/* AI 内容反馈（仅 AI 生成的章节显示） */}
                   {selectedChapter.source === "ai" && selectedChapter.content && (
                     <div className="shrink-0 border-t px-4 py-1">
