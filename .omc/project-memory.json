@@ -113,21 +113,57 @@
   },
   "hotPaths": [
     {
-      "path": "backend",
-      "accessCount": 10,
-      "lastAccessed": 1775185756267,
-      "type": "directory"
-    },
-    {
       "path": "backend/app/api/v1/bid_project.py",
-      "accessCount": 10,
-      "lastAccessed": 1775186206798,
+      "accessCount": 32,
+      "lastAccessed": 1775192466995,
       "type": "file"
     },
     {
+      "path": "backend/app/services/generation/reviewer.py",
+      "accessCount": 24,
+      "lastAccessed": 1775192040714,
+      "type": "file"
+    },
+    {
+      "path": "backend",
+      "accessCount": 23,
+      "lastAccessed": 1775191049854,
+      "type": "directory"
+    },
+    {
       "path": "backend/app/services/bid_generation_service.py",
+      "accessCount": 22,
+      "lastAccessed": 1775190350705,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 20,
+      "lastAccessed": 1775190029924,
+      "type": "directory"
+    },
+    {
+      "path": "backend/tests/test_generation_reviewer.py",
+      "accessCount": 10,
+      "lastAccessed": 1775192015009,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/models/bid_project.py",
       "accessCount": 9,
-      "lastAccessed": 1775185179432,
+      "lastAccessed": 1775186553733,
+      "type": "directory"
+    },
+    {
+      "path": "backend/tests/conftest.py",
+      "accessCount": 9,
+      "lastAccessed": 1775189681381,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/main.py",
+      "accessCount": 9,
+      "lastAccessed": 1775190213069,
       "type": "file"
     },
     {
@@ -137,15 +173,39 @@
       "type": "file"
     },
     {
-      "path": "backend/app/models/bid_project.py",
-      "accessCount": 8,
-      "lastAccessed": 1775185065250,
+      "path": "backend/app",
+      "accessCount": 6,
+      "lastAccessed": 1775190047560,
       "type": "directory"
     },
     {
       "path": "backend/app/services/generation/writer.py",
+      "accessCount": 6,
+      "lastAccessed": 1775190997320,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/core/config.py",
       "accessCount": 5,
-      "lastAccessed": 1775118911797,
+      "lastAccessed": 1775189194689,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/generation/formatter.py",
+      "accessCount": 5,
+      "lastAccessed": 1775190037637,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services",
+      "accessCount": 5,
+      "lastAccessed": 1775190997255,
+      "type": "directory"
+    },
+    {
+      "path": "backend/app/services/generation/compliance_gate.py",
+      "accessCount": 5,
+      "lastAccessed": 1775190997345,
       "type": "file"
     },
     {
@@ -155,39 +215,21 @@
       "type": "file"
     },
     {
-      "path": "backend/app/services/generation/compliance_gate.py",
-      "accessCount": 4,
-      "lastAccessed": 1775119335851,
-      "type": "file"
-    },
-    {
-      "path": "backend/app/services/generation/reviewer.py",
-      "accessCount": 4,
-      "lastAccessed": 1775119947218,
-      "type": "file"
-    },
-    {
-      "path": "backend/app/services/generation/formatter.py",
-      "accessCount": 4,
-      "lastAccessed": 1775119969169,
-      "type": "file"
-    },
-    {
       "path": "backend/app/api/v1/chat.py",
       "accessCount": 4,
       "lastAccessed": 1775185171509,
       "type": "file"
     },
     {
-      "path": "backend/tests/test_health.py",
-      "accessCount": 3,
-      "lastAccessed": 1775116133604,
+      "path": "backend/app/services/generation/planner.py",
+      "accessCount": 4,
+      "lastAccessed": 1775190037035,
       "type": "file"
     },
     {
-      "path": "backend/app/services/generation/planner.py",
+      "path": "backend/tests/test_health.py",
       "accessCount": 3,
-      "lastAccessed": 1775117463509,
+      "lastAccessed": 1775116133604,
       "type": "file"
     },
     {
@@ -203,16 +245,28 @@
       "type": "file"
     },
     {
+      "path": "docker-compose.yml",
+      "accessCount": 3,
+      "lastAccessed": 1775186628481,
+      "type": "file"
+    },
+    {
+      "path": "backend/Dockerfile",
+      "accessCount": 3,
+      "lastAccessed": 1775186991281,
+      "type": "file"
+    },
+    {
+      "path": "backend/requirements.txt",
+      "accessCount": 3,
+      "lastAccessed": 1775187112017,
+      "type": "file"
+    },
+    {
       "path": "backend/app/services/retriever.py",
       "accessCount": 2,
       "lastAccessed": 1775117402093,
       "type": "file"
-    },
-    {
-      "path": "backend/app",
-      "accessCount": 2,
-      "lastAccessed": 1775117402795,
-      "type": "directory"
     },
     {
       "path": "backend/app/services/bid_compliance_service.py",
@@ -233,45 +287,33 @@
       "type": "file"
     },
     {
-      "path": "",
-      "accessCount": 2,
-      "lastAccessed": 1775184294326,
-      "type": "directory"
-    },
-    {
-      "path": "backend/app/core/config.py",
-      "accessCount": 2,
-      "lastAccessed": 1775185741518,
-      "type": "file"
-    },
-    {
-      "path": "backend/tests/conftest.py",
-      "accessCount": 2,
-      "lastAccessed": 1775185761583,
-      "type": "file"
-    },
-    {
       "path": "backend/tests",
       "accessCount": 2,
       "lastAccessed": 1775185764111,
       "type": "directory"
     },
     {
-      "path": "backend/app/services",
-      "accessCount": 1,
-      "lastAccessed": 1775116440812,
+      "path": "backend/app/core/deps.py",
+      "accessCount": 2,
+      "lastAccessed": 1775186553878,
       "type": "directory"
     },
     {
-      "path": "backend/app/services/embedding_service.py",
-      "accessCount": 1,
-      "lastAccessed": 1775116488968,
+      "path": "backend/app/core/database.py",
+      "accessCount": 2,
+      "lastAccessed": 1775186613579,
       "type": "file"
     },
     {
       "path": "backend/app/services/generation/__init__.py",
-      "accessCount": 1,
-      "lastAccessed": 1775116527324,
+      "accessCount": 2,
+      "lastAccessed": 1775190036193,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/embedding_service.py",
+      "accessCount": 2,
+      "lastAccessed": 1775191004337,
       "type": "file"
     },
     {
@@ -329,27 +371,9 @@
       "type": "file"
     },
     {
-      "path": "backend/tests/test_generation_reviewer.py",
-      "accessCount": 1,
-      "lastAccessed": 1775119997951,
-      "type": "file"
-    },
-    {
       "path": "backend/tests/test_generation_formatter.py",
       "accessCount": 1,
       "lastAccessed": 1775120025058,
-      "type": "file"
-    },
-    {
-      "path": "docker-compose.yml",
-      "accessCount": 1,
-      "lastAccessed": 1775184298184,
-      "type": "file"
-    },
-    {
-      "path": "backend/Dockerfile",
-      "accessCount": 1,
-      "lastAccessed": 1775184298626,
       "type": "file"
     },
     {
@@ -371,15 +395,21 @@
       "type": "file"
     },
     {
-      "path": "backend/requirements.txt",
+      "path": "backend/app/services/bid_project_service.py",
       "accessCount": 1,
-      "lastAccessed": 1775185743422,
+      "lastAccessed": 1775186535174,
       "type": "file"
     },
     {
-      "path": "backend/app/main.py",
+      "path": "backend/app/services/tender_parser.py",
       "accessCount": 1,
-      "lastAccessed": 1775185778963,
+      "lastAccessed": 1775186537173,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/feedback_service.py",
+      "accessCount": 1,
+      "lastAccessed": 1775186568198,
       "type": "file"
     }
   ],

@@ -13,6 +13,8 @@ from app.services.ai_detection_service import (
     _check_repetitive_phrases,
     _check_connector_density,
     _check_paragraph_uniformity,
+    _check_ngram_divergence,
+    _kl_divergence,
 )
 
 
@@ -170,7 +172,7 @@ class TestDetectAiText:
         report = detect_ai_text(AI_LIKE_TEXT)
         assert report.overall_score > 30
         assert report.risk_level in ("medium", "high")
-        assert len(report.dimensions) == 5
+        assert len(report.dimensions) == 6
 
     def test_human_text_low_risk(self):
         report = detect_ai_text(HUMAN_LIKE_TEXT)
@@ -191,3 +193,44 @@ class TestDetectAiText:
     def test_empty_text(self):
         report = detect_ai_text("")
         assert report.overall_score == 0
+
+
+# ═══════════════════════════════════════════════════════════
+# L2: N-gram 基线对比
+# ═══════════════════════════════════════════════════════════
+
+class TestKLDivergence:
+
+    def test_identical_distributions(self):
+        p = {"a": 0.5, "b": 0.5}
+        kl = _kl_divergence(p, p)
+        assert kl == pytest.approx(0.0, abs=0.01)
+
+    def test_divergent_distributions(self):
+        p = {"a": 0.9, "b": 0.1}
+        q = {"a": 0.1, "b": 0.9}
+        kl = _kl_divergence(p, q)
+        assert kl > 1.0  # 差异大 → 散度高
+
+
+class TestNgramDivergence:
+
+    def test_short_text_skip(self):
+        result = _check_ngram_divergence("太短")
+        assert result.score == 0
+
+    def test_ai_text_returns_result(self):
+        result = _check_ngram_divergence(AI_LIKE_TEXT)
+        assert result.name == "N-gram 基线偏离"
+        assert "KL散度" in result.detail
+
+    def test_human_text_returns_result(self):
+        result = _check_ngram_divergence(HUMAN_LIKE_TEXT)
+        assert result.name == "N-gram 基线偏离"
+        assert "KL散度" in result.detail
+
+    def test_dimension_in_full_report(self):
+        """L2 维度出现在完整检测报告中"""
+        report = detect_ai_text(AI_LIKE_TEXT)
+        names = [d.name for d in report.dimensions]
+        assert "N-gram 基线偏离" in names
