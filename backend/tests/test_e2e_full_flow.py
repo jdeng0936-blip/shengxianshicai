@@ -176,7 +176,57 @@ class TestFullBidFlow:
         assert len(data["chapters"]) == 9
         assert data["enterprise_id"] is not None
 
-    async def test_12_cleanup(self, async_client: AsyncClient, auth_headers: dict):
+    async def test_12_coverage_report(self, async_client: AsyncClient, auth_headers: dict):
+        """步骤 12: 评分覆盖率报告（章节无内容时应报错）"""
+        pid = self.__class__.project_id
+        resp = await async_client.get(
+            f"/api/v1/bid-projects/{pid}/coverage-report",
+            headers=auth_headers,
+        )
+        # 章节内容为空，应返回 400
+        assert resp.status_code == 400
+
+    async def test_13_ai_detection(self, async_client: AsyncClient, auth_headers: dict):
+        """步骤 13: 反 AI 检测 — 批量检测（章节无内容应返回空列表）"""
+        pid = self.__class__.project_id
+        resp = await async_client.get(
+            f"/api/v1/bid-projects/{pid}/ai-detection",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert "project_avg_score" in data
+        assert "chapters" in data
+
+    async def test_14_bid_checklist(self, async_client: AsyncClient, auth_headers: dict):
+        """步骤 14: 投标准备检查清单"""
+        pid = self.__class__.project_id
+        resp = await async_client.get(
+            f"/api/v1/bid-projects/{pid}/bid-checklist",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["deposit_memo"] is not None
+        assert "memo_text" in data["deposit_memo"]
+        assert len(data["stamp_items"]) >= 1
+        assert len(data["print_reminders"]) >= 10
+        assert data["total_items"] > 0
+
+    async def test_15_credential_alerts(self, async_client: AsyncClient, auth_headers: dict):
+        """步骤 15: 资质到期预警"""
+        pid = self.__class__.project_id
+        resp = await async_client.get(
+            f"/api/v1/bid-projects/{pid}/credential-alerts",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert "can_bid" in data
+        assert "alerts" in data
+        assert data["total_credentials"] >= 0
+
+    async def test_16_cleanup(self, async_client: AsyncClient, auth_headers: dict):
         """清理: 删除测试数据"""
         pid = self.__class__.project_id
         ent_id = self.__class__.enterprise_id
