@@ -254,6 +254,74 @@ prompts:
         2. 如果招标文件中未明确某项，值填写 null
         3. severity 只有 "fatal"（废标）和 "warning"（扣分）两种
 
+    v2_scoring_matrix:
+      version: "2.0"
+      description: "招标文件结构化解析 V2 — 评分矩阵精细化 + 子项拆解"
+      template: |
+        你是专业的招标文件分析师，请仔细阅读以下招标文件内容，
+        重点提取评分标准矩阵并精细化拆解为可验证的子项。
+
+        == 招标文件原文 ==
+        {tender_content}
+
+        请严格按照以下 JSON 格式输出：
+        {{
+          "project_name": "项目名称",
+          "buyer_name": "采购方名称",
+          "customer_type": "school/hospital/government/enterprise",
+          "budget_amount": 数字（元）,
+          "deadline": "YYYY-MM-DD HH:MM",
+          "tender_type": "open/invite/negotiate",
+          "delivery_scope": "配送范围描述",
+
+          "disqualification_items": [
+            {{"content": "废标条件描述", "severity": "fatal", "keywords": ["关键词1", "关键词2"]}}
+          ],
+
+          "qualification_requirements": [
+            {{"content": "资格要求描述", "is_mandatory": true, "keywords": ["关键词1"]}}
+          ],
+
+          "technical_requirements": [
+            {{"content": "技术要求描述", "category": "cold_chain/food_safety/delivery/quality"}}
+          ],
+
+          "scoring_criteria": [
+            {{
+              "dimension": "评分维度名称（如技术方案）",
+              "max_score": 总分,
+              "sub_items": [
+                {{
+                  "name": "子项名称（如冷链运输方案）",
+                  "max_score": 子项分数,
+                  "weight": 百分比,
+                  "description": "评分说明",
+                  "keywords": ["冷链", "温控", "GPS"],
+                  "is_mandatory": true或false
+                }}
+              ]
+            }}
+          ],
+
+          "commercial_requirements": [
+            {{"content": "商务要求描述"}}
+          ],
+
+          "quotation_format": {{
+            "discount_rate_required": true/false,
+            "categories": ["蔬菜", "肉类"],
+            "pricing_method": "固定单价/下浮率/综合评标价"
+          }}
+        }}
+
+        注意：
+        1. 废标项是最关键的信息，必须逐条提取，不能遗漏
+        2. 评分标准必须拆解到子项级别，每个子项附带关键词列表
+        3. keywords 字段用于后续自动化覆盖率检查，请提取 2-5 个核心关键词
+        4. is_mandatory 标注该子项是否为必须响应项（废标级评分项标记为 true）
+        5. 如果招标文件中未明确某项，值填写 null
+        6. severity 只有 "fatal"（废标）和 "warning"（扣分）两种
+
   # ===== 合规性审查 =====
   compliance_review:
     v1_five_dimension:

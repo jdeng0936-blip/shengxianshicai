@@ -82,6 +82,106 @@ def _clean_text(text: str) -> str:
     return text.strip()
 
 
+# ══════════════════════════════════════════════════════════════
+# 废标条款关键词库 + 规则引擎（P0 安全红线：关键词硬检查兜底 LLM）
+# ══════════════════════════════════════════════════════════════
+
+DISQUALIFICATION_KEYWORDS = [
+    # —— 明确废标/否决表述 ——
+    "将被否决", "取消投标资格", "不予评审", "视为无效投标",
+    "按废标处理", "投标无效", "否决其投标", "不得进入评审",
+    "不予受理", "拒绝投标", "取消中标资格", "失去中标资格",
+    "不合格投标", "无效标", "废标", "不予通过",
+    "不符合资格", "丧失投标资格", "自动放弃", "视为放弃",
+    "拒绝其投标", "不接受投标", "不得参与", "不予中标",
+    "予以否决", "作废标处理", "按无效标处理", "按废标论处",
+    # —— 资格/证照缺失 ——
+    "未提供有效", "未取得", "未办理", "未具备",
+    "不具备相应资质", "缺少必要证照", "证书过期", "许可证失效",
+    "未在有效期内", "未年检", "营业执照过期",
+    "食品经营许可证过期", "无食品经营许可", "无营业执照",
+    # —— 投标文件形式缺陷 ——
+    "未按规定密封", "未按要求装订", "投标文件份数不足",
+    "未提交投标保证金", "保证金不足", "保证金未到账",
+    "未加盖公章", "未签字盖章", "缺少法定代表人签字",
+    "授权书无效", "授权委托书缺失", "委托书未公证",
+    "未提交原件", "复印件未盖章", "扫描件不清晰",
+    # —— 响应性/实质偏离 ——
+    "实质性偏离", "重大偏离", "不满足星号条款",
+    "未响应带星号要求", "未满足强制要求", "不符合实质性要求",
+    "偏离招标文件要求", "未按招标文件要求", "响应不完整",
+    # —— 价格/报价问题 ——
+    "报价超过预算", "报价超过最高限价", "低于成本报价",
+    "报价缺少单价明细", "未按格式填写报价", "报价表空白",
+    "总价与单价不一致", "报价涂改", "大小写金额不一致",
+    # —— 诚信/违法 ——
+    "串通投标", "围标", "挂靠", "借用资质",
+    "提供虚假材料", "弄虚作假", "行贿记录",
+    "被列入黑名单", "信用惩戒", "失信被执行人",
+    "重大违法记录", "行政处罚", "刑事处罚",
+    # —— 时间/程序问题 ——
+    "逾期送达", "超过截止时间", "未按时送达",
+    "未参加开标", "未到场", "缺席开标会议",
+    # —— 利益冲突 ——
+    "存在利害关系", "与采购人有利害关系", "关联交易",
+    "法定代表人为同一人", "存在控股关系", "存在管理关系",
+    # —— 生鲜配送专项 ——
+    "无冷链运输车辆", "无冷库", "无冷藏设施",
+    "食品安全事故", "食物中毒", "无HACCP", "无ISO22000",
+    "无SC认证", "无食品生产许可", "配送能力不足",
+    "无健康证", "从业人员无健康证明",
+]
+
+# 否定条件句式正则（识别"如果X则Y"型废标条件）
+_NEGATION_PATTERNS = [
+    re.compile(r"(?:如果|若|如|倘若).{2,40}(?:则|将|应|须|必须).{2,60}(?:废标|否决|无效|不予|取消|拒绝)", re.DOTALL),
+    re.compile(r"(?:未|不|没有|缺少|缺失).{1,30}(?:将|则|视为|按|作为).{2,40}(?:废标|否决|无效|不予|取消)", re.DOTALL),
+    re.compile(r"(?:不得|禁止|严禁).{2,40}(?:否则|违反者|违者).{2,40}(?:废标|否决|无效|取消)", re.DOTALL),
+    re.compile(r"(?:必须|应当|须).{2,40}(?:否则|不满足|未满足).{2,40}(?:废标|否决|无效|不予)", re.DOTALL),
+]
+
+
+def _extract_disqualification_items(full_text: str) -> list[dict]:
+    """从全文中基于关键词 + 否定条件句式提取废标条款
+
+    双重机制：
+      1. 关键词库扫描：在全文中搜索关键词，提取包含关键词的完整句子
+      2. 否定条件句式识别：正则匹配"如果...则..."、"未...将..."等模式
+      3. 两者取并集后去重
+
+    Returns:
+        [{"content": "废标条件描述", "source": "keyword|pattern"}]
+    """
+    results: list[dict] = []
+    seen_sentences: set[str] = set()
+
+    # 按句子分割（句号、分号、换行）
+    sentences = re.split(r'[。；\n]+', full_text)
+    sentences = [s.strip() for s in sentences if len(s.strip()) >= 8]
+
+    # 1. 关键词扫描
+    for sentence in sentences:
+        for keyword in DISQUALIFICATION_KEYWORDS:
+            if keyword in sentence:
+                # 截断过长句子
+                content = sentence[:200] if len(sentence) > 200 else sentence
+                if content not in seen_sentences:
+                    seen_sentences.add(content)
+                    results.append({"content": content, "source": "keyword"})
+                break  # 每句匹配一次即可
+
+    # 2. 否定条件句式匹配
+    for pattern in _NEGATION_PATTERNS:
+        for match in pattern.finditer(full_text):
+            content = match.group(0).strip()
+            content = content[:200] if len(content) > 200 else content
+            if content not in seen_sentences:
+                seen_sentences.add(content)
+                results.append({"content": content, "source": "pattern"})
+
+    return results
+
+
 def _chunk_text(text: str, max_chars: int = CHUNK_MAX_CHARS) -> list[str]:
     """将长文本按段落边界分块"""
     if len(text) <= max_chars:
