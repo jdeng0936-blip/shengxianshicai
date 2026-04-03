@@ -187,6 +187,91 @@ def replace_high_risk_fields(
     return content
 
 
+# ══════════════════════════════════════════════════════════════
+# P1 正则审计：检测 LLM 绕过占位符直写的敏感数字
+# ══════════════════════════════════════════════════════════════
+
+import re as _re
+import logging as _logging
+
+_audit_logger = _logging.getLogger("freshbid.audit")
+
+# 敏感数字模式：捕获 LLM 可能直写的具体数值
+_SENSITIVE_PATTERNS = [
+    # 车辆数量："拥有15辆冷链车"、"配备冷藏车20台"
+    (_re.compile(r"(?:拥有|配备|具备|现有|共计|共有)\s*(\d+)\s*辆.*?(?:冷链|冷藏|配送)"), "车辆数量"),
+    (_re.compile(r"(?:冷链|冷藏|配送)(?:车辆?|车)\s*(\d+)\s*(?:辆|台)"), "车辆数量"),
+    # 仓储面积："仓库面积5000平方米"、"冷库2000㎡"
+    (_re.compile(r"(?:仓库|仓储|冷库|库房)(?:面积)?\s*(\d+(?:\.\d+)?)\s*(?:平方米|㎡|平米|m²)"), "仓储面积"),
+    # 员工人数："员工300人"、"团队成员200余名"
+    (_re.compile(r"(?:员工|人员|团队|配送员|司机)\s*(\d{2,})\s*(?:人|名|位|余人|余名)"), "员工人数"),
+    # 注册资本："注册资本1000万元"
+    (_re.compile(r"注册资(?:本|金)\s*(\d+(?:\.\d+)?)\s*(?:万元|元|万)"), "注册资本"),
+    # 资质编号模式："许可证号JY12345"、"证书编号SC2024001"
+    (_re.compile(r"(?:许可证号?|编号|证号|证书号)[：:\s]*([A-Z]{1,5}\d{6,})"), "资质编号"),
+]
+
+
+def audit_sensitive_numbers(
+    content: str,
+    enterprise: Optional[Enterprise] = None,
+) -> list[dict]:
+    """扫描 LLM 生成内容中直写的敏感数字，返回不匹配项
+
+    Returns:
+        [{"field": "车辆数量", "found": "15", "expected": "10", "match": "拥有15辆冷链车"}, ...]
+        空列表表示未发现异常
+    """
+    alerts = []
+    for pattern, field_name in _SENSITIVE_PATTERNS:
+        for m in pattern.finditer(content):
+            found_value = m.group(1)
+            expected = _get_expected_value(field_name, enterprise)
+            # 有 DB 值且不一致 → 高风险
+            if expected is not None and str(found_value) != str(expected):
+                alert = {
+                    "field": field_name,
+                    "found": found_value,
+                    "expected": str(expected),
+                    "match": m.group(0),
+                    "risk": "mismatch",
+                }
+                alerts.append(alert)
+                _audit_logger.warning(
+                    f"[敏感数字审计] {field_name}不一致: "
+                    f"文中={found_value} DB={expected} | '{m.group(0)}'"
+                )
+            # 无 DB 值但 LLM 编造了具体数字 → 中风险
+            elif expected is None and field_name != "资质编号":
+                alert = {
+                    "field": field_name,
+                    "found": found_value,
+                    "expected": None,
+                    "match": m.group(0),
+                    "risk": "fabricated",
+                }
+                alerts.append(alert)
+                _audit_logger.warning(
+                    f"[敏感数字审计] 疑似编造{field_name}: "
+                    f"'{m.group(0)}'（无企业数据可核实）"
+                )
+    return alerts
+
+
+def _get_expected_value(field_name: str, enterprise: Optional[Enterprise]) -> Optional[str]:
+    """从企业实体获取对应字段的期望值"""
+    if not enterprise:
+        return None
+    mapping = {
+        "车辆数量": enterprise.cold_chain_vehicles,
+        "仓储面积": enterprise.warehouse_area,
+        "员工人数": getattr(enterprise, "employee_count", None),
+        "注册资本": enterprise.registered_capital,
+    }
+    val = mapping.get(field_name)
+    return str(val) if val is not None else None
+
+
 def _build_images_info(images: list[ImageAsset]) -> str:
     """构建可用图片信息文本"""
     if not images:
@@ -532,6 +617,11 @@ class BidGenerationService:
         ent_for_replace = enterprise if project.enterprise_id else None
         content = replace_high_risk_fields(content, ent_for_replace, creds_for_replace)
 
+        # P1: 正则审计 — 检测 LLM 绕过占位符直写的敏感数字
+        audit_alerts = audit_sensitive_numbers(content, enterprise)
+        if audit_alerts:
+            await _emit("audit_warning", f"发现 {len(audit_alerts)} 个敏感数字异常")
+
         # 计算 ai_ratio（替换越多，AI 原创占比越低）
         orig_len = len(ai_raw_content)
         replaced_len = len(content)
@@ -552,9 +642,11 @@ class BidGenerationService:
         chapter.ai_prompt_version = "v2_with_images"
         chapter.ai_ratio = ai_ratio
         chapter.source_tags = ",".join(source_tags)
-        # 记录 Critic 审查元数据
+        # 记录 Critic 审查元数据 + 敏感数字审计
         if hasattr(chapter, "meta") and isinstance(chapter.meta, dict):
             chapter.meta["critic"] = critic_meta
+            if audit_alerts:
+                chapter.meta["audit_alerts"] = audit_alerts
         await self.session.commit()
         await self.session.refresh(chapter)
 

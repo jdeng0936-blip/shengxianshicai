@@ -96,7 +96,37 @@ class FeedbackService:
         self.session.add(log)
         await self.session.commit()
         await self.session.refresh(log)
+
+        # 回写 BidChapter.edit_ratio（闭环数据飞轮）
+        if diff_ratio is not None:
+            await self._update_chapter_edit_ratio(
+                project_id, chapter_no, diff_ratio
+            )
+
         return log
+
+    async def _update_chapter_edit_ratio(
+        self, project_id: int, chapter_no: str, diff_ratio: float
+    ) -> None:
+        """将最新 diff_ratio 回写到 BidChapter.edit_ratio，闭合数据飞轮链路"""
+        try:
+            from app.models.bid_project import BidChapter
+            result = await self.session.execute(
+                select(BidChapter).where(
+                    BidChapter.project_id == project_id,
+                    BidChapter.chapter_no == chapter_no,
+                )
+            )
+            chapter = result.scalar_one_or_none()
+            if chapter:
+                chapter.edit_ratio = diff_ratio
+                await self.session.commit()
+                logger.info(
+                    f"[edit_ratio回写] project={project_id} chapter={chapter_no} "
+                    f"edit_ratio={diff_ratio:.2%}"
+                )
+        except Exception as e:
+            logger.warning(f"[edit_ratio回写] 失败（不阻塞主流程）: {e}")
 
     @staticmethod
     async def _async_sink_to_knowledge_base(

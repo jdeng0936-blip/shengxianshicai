@@ -137,15 +137,19 @@ def _check_l2_semantic(
     ]
     for req in scoring_reqs:
         req_text = req.get("content", "")
+        max_score = req.get("max_score") or 0
         # 简单关键词提取（取 2 字以上的词段，按标点和常见连接词切分）
         keywords = [w for w in re.split(r"[，。、；：\s及与和或的]+", req_text) if len(w) >= 2]
         matched = sum(1 for kw in keywords if kw in content)
         coverage = matched / max(len(keywords), 1)
-        if coverage < 0.3:
+        # 按权重动态调整阈值：高分项要求更高覆盖率
+        threshold = 0.5 if max_score >= 10 else (0.3 if max_score >= 5 else 0.2)
+        if coverage < threshold:
+            score_hint = f"（分值{max_score}分，要求覆盖≥{threshold:.0%}）" if max_score else ""
             issues.append(ComplianceIssue(
                 level=ComplianceLevel.L2_SEMANTIC,
                 chapter_no=draft.chapter_no,
-                description=f"评分项覆盖不足({coverage:.0%}): '{req_text[:40]}'",
+                description=f"评分项覆盖不足({coverage:.0%}){score_hint}: '{req_text[:40]}'",
                 suggestion="在章节中补充对该评分项的具体响应内容",
             ))
 
