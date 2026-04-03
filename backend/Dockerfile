@@ -17,5 +17,5 @@ COPY . .
 
 EXPOSE 8000
 
-# 启动命令：任务状态已迁移至 Redis，可按需调整 worker 数
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# 启动命令：worker 数通过 WORKERS 环境变量控制（默认 2）
+CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WORKERS:-2}"

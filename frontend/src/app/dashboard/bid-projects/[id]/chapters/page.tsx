@@ -24,6 +24,7 @@ import ChapterFeedback from "@/components/business/chapter-feedback";
 import AIPipelineProgress from "@/components/business/ai-pipeline-progress";
 import CoverageHeatmap, { type CoverageReport } from "@/components/business/coverage-heatmap";
 import { useGenerationSocket } from "@/hooks/useGenerationSocket";
+import { toast } from "sonner";
 
 interface BidChapter {
   id: number;
@@ -91,7 +92,7 @@ export default function ChaptersEditorPage() {
       const res = await api.get(`/bid-projects/${projectId}/coverage-report`);
       setCoverageReport(res.data?.data || null);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "覆盖率检查失败");
+      toast.error(err.response?.data?.detail || "覆盖率检查失败");
       setCoverageReport(null);
     } finally {
       setCoverageLoading(false);
@@ -148,7 +149,7 @@ export default function ChaptersEditorPage() {
         setEditContent(data[0].content || "");
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || "初始化失败");
+      toast.error(err.response?.data?.detail || "初始化失败");
     } finally {
       setLoading(false);
     }
@@ -168,7 +169,7 @@ export default function ChaptersEditorPage() {
         prev.map((ch) => (ch.id === selectedId ? { ...ch, content: editContent } : ch))
       );
     } catch {
-      alert("保存失败");
+      toast.error("保存失败");
     } finally {
       setSaving(false);
     }
@@ -219,7 +220,7 @@ export default function ChaptersEditorPage() {
             } else if (msg.type === "done") {
               setGenStatus("");
             } else if (msg.type === "error") {
-              alert(msg.message || "生成失败");
+              toast.error(msg.message || "生成失败");
             }
           } catch {
             // skip parse errors
@@ -230,7 +231,7 @@ export default function ChaptersEditorPage() {
       // 刷新章节列表获取最新状态
       await fetchChapters();
     } catch (err: any) {
-      alert("生成失败");
+      toast.error("生成失败");
     } finally {
       setGenerating(false);
       setGenStatus("");
@@ -319,7 +320,7 @@ export default function ChaptersEditorPage() {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "导出失败");
+      toast.error(err.response?.data?.detail || "导出失败");
     } finally {
       setExporting(false);
     }
@@ -345,7 +346,7 @@ export default function ChaptersEditorPage() {
         setSelection(null);
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || "AI 重写失败");
+      toast.error(err.response?.data?.detail || "AI 重写失败");
     } finally {
       setRewriting(false);
     }
@@ -370,7 +371,7 @@ export default function ChaptersEditorPage() {
         setCustomInstruction("");
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || "自定义重写失败");
+      toast.error(err.response?.data?.detail || "自定义重写失败");
     } finally {
       setCustomRewriting(false);
     }
