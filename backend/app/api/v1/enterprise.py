@@ -95,3 +95,44 @@ async def check_readiness(
         return ApiResponse(data=result)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ========== 企业能力画像 ==========
+
+@router.get("/{enterprise_id}/profile", response_model=ApiResponse)
+async def get_enterprise_profile(
+    enterprise_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """企业能力画像 — 五维雷达图谱（硬件/合规/服务/文档/竞争）"""
+    from app.services.capability_profile import CapabilityProfileService
+    svc = CapabilityProfileService(session)
+    try:
+        profile = await svc.build_profile(enterprise_id, tenant_id)
+        return ApiResponse(data=profile.to_dict())
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{enterprise_id}/match/{project_id}", response_model=ApiResponse)
+async def match_enterprise_project(
+    enterprise_id: int,
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """企业能力 vs 招标要求匹配度评分"""
+    from app.services.capability_profile import CapabilityProfileService
+    svc = CapabilityProfileService(session)
+    try:
+        result = await svc.match_score(enterprise_id, project_id, tenant_id)
+        return ApiResponse(data={
+            "enterprise_id": result.enterprise_id,
+            "project_id": result.project_id,
+            "match_score": result.match_score,
+            "strengths": result.strengths,
+            "weaknesses": result.weaknesses,
+        })
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
