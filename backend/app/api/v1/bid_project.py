@@ -944,6 +944,65 @@ async def generate_risk_report(
         raise HTTPException(status_code=500, detail=f"风险报告生成失败: {str(e)}")
 
 
+# ========== 围串标相似度检测 ==========
+
+@router.post("/{project_id}/similarity-check", response_model=ApiResponse)
+async def check_similarity(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """围串标语义相似度检测 — 对比历史标书三维度交叉检测
+
+    返回: danger/warning/safe ���级报告
+    """
+    from app.services.similarity_detector import SimilarityDetector
+
+    detector = SimilarityDetector(session)
+    try:
+        report = await detector.detect(project_id, tenant_id)
+        return ApiResponse(data={
+            "project_id": report.project_id,
+            "generated_at": report.generated_at,
+            "compared_count": report.compared_count,
+            "max_similarity": report.max_similarity,
+            "safe": report.safe,
+            "danger_count": len(report.danger_items),
+            "warning_count": len(report.warning_items),
+            "safe_count": report.safe_count,
+            "danger_items": [
+                {
+                    "chapter_no": it.chapter_no,
+                    "chapter_title": it.chapter_title,
+                    "compared_project_id": it.compared_project_id,
+                    "compared_project_name": it.compared_project_name,
+                    "embedding_score": it.embedding_score,
+                    "ngram_score": it.ngram_score,
+                    "exact_paragraphs": it.exact_paragraphs,
+                    "risk_level": it.risk_level,
+                }
+                for it in report.danger_items
+            ],
+            "warning_items": [
+                {
+                    "chapter_no": it.chapter_no,
+                    "chapter_title": it.chapter_title,
+                    "compared_project_id": it.compared_project_id,
+                    "compared_project_name": it.compared_project_name,
+                    "embedding_score": it.embedding_score,
+                    "ngram_score": it.ngram_score,
+                    "risk_level": it.risk_level,
+                }
+                for it in report.warning_items
+            ],
+        })
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"相似度检测失败: {str(e)}")
+
+
 # ========== 评分覆盖率报告 ==========
 
 @router.get("/{project_id}/coverage-report", response_model=ApiResponse)
