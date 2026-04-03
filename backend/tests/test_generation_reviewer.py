@@ -9,10 +9,12 @@ from app.services.generation.reviewer import (
     review_scoring_coverage,
     ReviewReport,
     ScoringCoverage,
+    Remediation,
     _extract_keywords,
     _calc_coverage,
     _cosine_similarity,
     _chunk_text,
+    _generate_remediation,
 )
 from app.services.generation.polish_pipeline import PolishResult
 
@@ -85,7 +87,7 @@ class TestReviewScoringCoverage:
 
     @pytest.mark.asyncio
     async def test_uncovered_item_flagged(self):
-        """评分项未被覆盖 → 进入 uncovered_items"""
+        """评分项未被覆盖 → 进入 uncovered_items，附带补充建议"""
         chapters = [_chapter(content="本公司主营肉类加工业务")]
         reqs = [_req(1, "有机蔬菜种植基地直供方案", 20.0)]
 
@@ -94,6 +96,10 @@ class TestReviewScoringCoverage:
         assert len(report.uncovered_items) == 1
         assert report.uncovered_items[0].requirement_id == 1
         assert report.uncovered_items[0].gap_note is not None
+        # L2: 补充建议存在
+        assert report.uncovered_items[0].remediation is not None
+        assert report.uncovered_items[0].remediation.target_chapter == "第三章"
+        assert "有机蔬菜" in report.uncovered_items[0].remediation.action
 
     @pytest.mark.asyncio
     async def test_covered_in_tracks_chapters(self):
@@ -369,3 +375,199 @@ class TestSemanticCoverage:
 
         # 高分冷链项覆盖好 + 低分蔬菜项覆盖差 → 加权整体偏高
         assert report.overall_coverage > 0.3
+
+    @pytest.mark.asyncio
+    async def test_semantic_remediation_generated(self):
+        """语义模式下未覆盖项生成 remediation"""
+        chapters = [
+            _chapter("第三章", "食材采购", content="冷链配送低温运输温控方案"),
+            _chapter("第五章", "质量管理", content="食品安全质量管理体系"),
+        ]
+        reqs = [_req(1, "有机蔬菜种植基地直供方案", 20.0)]
+        embed_fn = _make_controlled_embed_fn()
+
+        report = await review_scoring_coverage(
+            chapters, reqs, threshold=0.6, embed_fn=embed_fn
+        )
+
+        assert len(report.uncovered_items) == 1
+        rem = report.uncovered_items[0].remediation
+        assert rem is not None
+        assert rem.target_chapter in ("第三章", "第五章")
+        assert rem.priority == "high"  # 20分 → high
+        assert "有机蔬菜" in rem.action
+
+
+# ═══════════════════════════════════════════════════════════
+# L2 补充建议生成（_generate_remediation）
+# ═══════════════════════════════════════════════════════════
+
+class TestGenerateRemediation:
+
+    @pytest.mark.asyncio
+    async def test_priority_high(self):
+        """高分评分项 → high 优先级"""
+        item = ScoringCoverage(
+            requirement_id=1,
+            requirement_text="冷链配送方案及温控措施",
+            max_score=20.0,
+            coverage_score=0.3,
+        )
+        chapters = [_chapter("第三章", "食材采购", "内容")]
+        rem = await _generate_remediation(item, chapters)
+
+        assert rem.priority == "high"
+        assert rem.target_chapter == "第三章"
+        assert rem.target_title == "食材采购"
+
+    @pytest.mark.asyncio
+    async def test_priority_medium(self):
+        """中分评分项 → medium 优先级"""
+        item = ScoringCoverage(
+            requirement_id=2,
+            requirement_text="人员培训方案",
+            max_score=10.0,
+            coverage_score=0.4,
+        )
+        chapters = [_chapter("第六章", "人员管理", "内容")]
+        rem = await _generate_remediation(item, chapters)
+
+        assert rem.priority == "medium"
+
+    @pytest.mark.asyncio
+    async def test_priority_low(self):
+        """低分评分项 → low 优先级"""
+        item = ScoringCoverage(
+            requirement_id=3,
+            requirement_text="售后服务承诺",
+            max_score=5.0,
+            coverage_score=0.2,
+        )
+        chapters = [_chapter()]
+        rem = await _generate_remediation(item, chapters)
+
+        assert rem.priority == "low"
+
+    @pytest.mark.asyncio
+    async def test_selects_best_chapter_by_similarity(self):
+        """语义模式下选相似度最高的章节"""
+        item = ScoringCoverage(
+            requirement_id=1,
+            requirement_text="冷链配送",
+            max_score=15.0,
+            coverage_score=0.4,
+        )
+        chapters = [
+            _chapter("第三章", "食材采购", "少量冷链内容"),
+            _chapter("第五章", "配送方案", "大量冷链配送温控"),
+        ]
+        sim_map = {"第三章": 0.3, "第五章": 0.55}
+        rem = await _generate_remediation(item, chapters, chapter_similarities=sim_map)
+
+        assert rem.target_chapter == "第五章"
+
+    @pytest.mark.asyncio
+    async def test_selects_best_chapter_by_keywords(self):
+        """关键词模式下选命中率最高的章节"""
+        item = ScoringCoverage(
+            requirement_id=1,
+            requirement_text="冷链配送方案及温控措施",
+            max_score=15.0,
+            coverage_score=0.3,
+        )
+        chapters = [
+            _chapter("第三章", "食材采购", "有机蔬菜种植基地"),
+            _chapter("第五章", "配送方案", "冷链配送方案全程温控措施"),
+        ]
+        rem = await _generate_remediation(item, chapters)
+
+        assert rem.target_chapter == "第五章"
+
+    @pytest.mark.asyncio
+    async def test_action_contains_key_terms(self):
+        """无 suggest_fn 时 action 包含评分项关键词（规则建议）"""
+        item = ScoringCoverage(
+            requirement_id=1,
+            requirement_text="GPS实时温度监控方案",
+            max_score=10.0,
+            coverage_score=0.2,
+        )
+        chapters = [_chapter()]
+        rem = await _generate_remediation(item, chapters)
+
+        assert "GPS实时温度监控方案" in rem.action
+
+    @pytest.mark.asyncio
+    async def test_covered_item_no_remediation(self):
+        """覆盖的评分项不应有 remediation（由调用方控制）"""
+        chapters = [_chapter(content="冷链配送方案全程温控措施")]
+        reqs = [_req(1, "冷链配送方案及温控措施", 15.0)]
+
+        report = await review_scoring_coverage(chapters, reqs, threshold=0.6)
+
+        for item in report.scoring_items:
+            if item.coverage_score >= 0.6:
+                assert item.remediation is None
+
+    @pytest.mark.asyncio
+    async def test_llm_suggest_fn_enhances_action(self):
+        """suggest_fn 可用时，action 使用 LLM 生成的建议"""
+        async def mock_suggest(req_text, chapter_content, chapter_title):
+            return (
+                f"建议在「{chapter_title}」中补充：\n"
+                f"1) {req_text}的具体实施细则\n"
+                f"2) 配套设备清单及参数\n"
+                f"3) 历史执行数据与效果评估"
+            )
+
+        item = ScoringCoverage(
+            requirement_id=1,
+            requirement_text="冷链配送温控",
+            max_score=20.0,
+            coverage_score=0.3,
+        )
+        chapters = [_chapter("第三章", "食材采购", "现有内容")]
+        rem = await _generate_remediation(item, chapters, suggest_fn=mock_suggest)
+
+        assert "具体实施细则" in rem.action
+        assert "食材采购" in rem.action
+
+    @pytest.mark.asyncio
+    async def test_llm_suggest_fn_fallback_on_error(self):
+        """suggest_fn 抛异常时降级到规则建议"""
+        async def broken_suggest(req_text, chapter_content, chapter_title):
+            raise RuntimeError("LLM 不可用")
+
+        item = ScoringCoverage(
+            requirement_id=1,
+            requirement_text="冷链配送方案及温控措施",
+            max_score=15.0,
+            coverage_score=0.3,
+        )
+        chapters = [_chapter()]
+        rem = await _generate_remediation(item, chapters, suggest_fn=broken_suggest)
+
+        # 降级到规则建议
+        assert "建议补充关于" in rem.action
+        assert rem.priority == "high"
+
+    @pytest.mark.asyncio
+    async def test_llm_suggest_fn_in_full_pipeline(self):
+        """suggest_fn 通过 review_scoring_coverage 透传到 remediation"""
+        call_count = 0
+
+        async def mock_suggest(req_text, chapter_content, chapter_title):
+            nonlocal call_count
+            call_count += 1
+            return f"LLM建议: 在{chapter_title}补充{req_text}相关内容"
+
+        chapters = [_chapter(content="本公司主营肉类加工业务")]
+        reqs = [_req(1, "有机蔬菜种植基地直供方案", 20.0)]
+
+        report = await review_scoring_coverage(
+            chapters, reqs, threshold=0.6, suggest_fn=mock_suggest
+        )
+
+        assert len(report.uncovered_items) == 1
+        assert call_count == 1
+        assert "LLM建议" in report.uncovered_items[0].remediation.action

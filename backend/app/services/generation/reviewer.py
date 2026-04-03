@@ -21,8 +21,20 @@ logger = logging.getLogger(__name__)
 # embed_fn 类型: async (texts: list[str]) -> list[list[float] | None]
 EmbedFn = Callable[[list[str]], Awaitable[list[Optional[list[float]]]]]
 
+# suggest_fn 类型: async (req_text, chapter_content, chapter_title) -> 具体建议文本
+SuggestFn = Callable[[str, str, str], Awaitable[str]]
+
 
 # ── 数据结构 ──────────────────────────────────────────────
+
+@dataclass
+class Remediation:
+    """单个未覆盖项的补充建议"""
+    target_chapter: str          # 建议补充到哪个章节
+    target_title: str            # 章节标题
+    action: str                  # 具体补充动作描述
+    priority: str = "medium"     # high / medium / low
+
 
 @dataclass
 class ScoringCoverage:
@@ -33,6 +45,7 @@ class ScoringCoverage:
     covered_in: list[str] = field(default_factory=list)
     coverage_score: float = 0.0
     gap_note: Optional[str] = None
+    remediation: Optional[Remediation] = None
 
 
 @dataclass
@@ -86,11 +99,91 @@ def _chunk_text(text: str, chunk_size: int = 800, overlap: int = 200) -> list[st
     return chunks
 
 
+async def _generate_remediation(
+    item: ScoringCoverage,
+    chapters: list[PolishResult],
+    chapter_similarities: Optional[dict[str, float]] = None,
+    suggest_fn: Optional[SuggestFn] = None,
+) -> Remediation:
+    """为未覆盖评分项生成结构化补充建议
+
+    策略:
+      1. 找最佳目标章节（最高相似度或最多关键词命中的章节）
+      2. 规则建议: 提取关键词 + 分值 → 通用补充描述
+      3. LLM 增强（suggest_fn 可用时）: 调用大模型生成针对性段落框架
+      4. 按分值确定优先级
+
+    Args:
+        item: 未覆盖的评分项
+        chapters: 全部章节
+        chapter_similarities: 可选的 {chapter_no: similarity} 语义相似度映射
+        suggest_fn: 可选的 LLM 建议函数，签名:
+            async (req_text, chapter_content, chapter_title) -> 建议文本
+    """
+    # 确定优先级
+    score = item.max_score or 0
+    if score >= 15:
+        priority = "high"
+    elif score >= 8:
+        priority = "medium"
+    else:
+        priority = "low"
+
+    # 找最佳目标章节
+    best_ch = chapters[0] if chapters else None
+    best_score = -1.0
+
+    if chapter_similarities:
+        # 语义模式: 用相似度选最佳章节
+        for ch in chapters:
+            sim = chapter_similarities.get(ch.chapter_no, 0.0)
+            if sim > best_score:
+                best_score = sim
+                best_ch = ch
+    else:
+        # 关键词模式: 用关键词命中率选最佳章节
+        keywords = _extract_keywords(item.requirement_text)
+        for ch in chapters:
+            cov = _calc_coverage(keywords, ch.content or "")
+            if cov > best_score:
+                best_score = cov
+                best_ch = ch
+
+    # 构建规则级补充动作（兜底）
+    keywords = _extract_keywords(item.requirement_text)
+    key_terms = "、".join(keywords[:4]) if keywords else item.requirement_text[:30]
+    score_hint = f"（{score}分）" if score > 0 else ""
+    rule_action = f"建议补充关于「{key_terms}」的详细阐述{score_hint}，包含具体措施、数据支撑和实施方案"
+
+    # LLM 增强建议（优先）
+    action = rule_action
+    if suggest_fn is not None and best_ch is not None:
+        try:
+            llm_suggestion = await suggest_fn(
+                item.requirement_text,
+                (best_ch.content or "")[:1500],
+                best_ch.title,
+            )
+            if llm_suggestion and llm_suggestion.strip():
+                action = llm_suggestion.strip()
+                logger.info("LLM 增强建议生成成功: req_id=%d", item.requirement_id)
+        except Exception as e:
+            logger.warning("LLM 建议生成失败，降级规则建议: %s", e)
+
+    return Remediation(
+        target_chapter=best_ch.chapter_no if best_ch else "",
+        target_title=best_ch.title if best_ch else "",
+        action=action,
+        priority=priority,
+    )
+
+
 async def _semantic_review(
     chapters: list[PolishResult],
     scoring_requirements: list[dict],
     threshold: float,
     embed_fn: EmbedFn,
+    suggest_fn: Optional[SuggestFn] = None,
 ) -> tuple[list[ScoringCoverage], list[ScoringCoverage]]:
     """语义相似度路径: batch embed + 余弦相似度
 
@@ -148,6 +241,7 @@ async def _semantic_review(
             # 语义相似度计算
             best_sim = 0.0
             covered_in = []
+            ch_sim_map: dict[str, float] = {}
 
             for ch_idx, ch in enumerate(chapters):
                 ch_best = 0.0
@@ -156,6 +250,7 @@ async def _semantic_review(
                         sim = _cosine_similarity(req_emb, emb)
                         ch_best = max(ch_best, sim)
                         best_sim = max(best_sim, sim)
+                ch_sim_map[ch.chapter_no] = ch_best
                 # 单章覆盖阈值: 0.5（语义匹配门槛低于整体阈值）
                 if ch_best >= 0.5:
                     covered_in.append(ch.chapter_no)
@@ -175,6 +270,12 @@ async def _semantic_review(
         )
         scoring_items.append(item)
         if coverage < threshold:
+            # L2: 生成补充建议（含可选 LLM 增强）
+            item.remediation = await _generate_remediation(
+                item, chapters,
+                chapter_similarities=ch_sim_map if req_emb is not None else None,
+                suggest_fn=suggest_fn,
+            )
             uncovered_items.append(item)
 
     return scoring_items, uncovered_items
@@ -187,6 +288,7 @@ async def review_scoring_coverage(
     scoring_requirements: list[dict],
     threshold: float = 0.6,
     embed_fn: Optional[EmbedFn] = None,
+    suggest_fn: Optional[SuggestFn] = None,
 ) -> ReviewReport:
     """
     评分点覆盖校验节点
@@ -202,6 +304,8 @@ async def review_scoring_coverage(
         threshold: 覆盖度阈值，低于此值视为未覆盖
         embed_fn: 可选的批量 embedding 函数，签名:
             async (texts: list[str]) -> list[list[float] | None]
+        suggest_fn: 可选的 LLM 建议生成函数，签名:
+            async (req_text, chapter_content, chapter_title) -> 建议文本
 
     Returns:
         覆盖校验报告，含整体覆盖率和逐项明细
@@ -211,6 +315,7 @@ async def review_scoring_coverage(
         try:
             scoring_items, uncovered_items = await _semantic_review(
                 chapters, scoring_requirements, threshold, embed_fn,
+                suggest_fn=suggest_fn,
             )
             logger.info("评分覆盖校验: 语义模式, %d 项, %d 未覆盖",
                         len(scoring_items), len(uncovered_items))
@@ -258,6 +363,10 @@ async def review_scoring_coverage(
             scoring_items.append(item)
 
             if coverage < threshold:
+                # L2: 生成补充建议（关键词模式，含 LLM 增强）
+                item.remediation = await _generate_remediation(
+                    item, chapters, suggest_fn=suggest_fn,
+                )
                 uncovered_items.append(item)
 
     # 计算整体覆盖率（按评分分值加权，无分值时等权）
