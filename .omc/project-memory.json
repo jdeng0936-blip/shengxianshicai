@@ -113,6 +113,24 @@
   },
   "hotPaths": [
     {
+      "path": "backend",
+      "accessCount": 10,
+      "lastAccessed": 1775185756267,
+      "type": "directory"
+    },
+    {
+      "path": "backend/app/api/v1/bid_project.py",
+      "accessCount": 10,
+      "lastAccessed": 1775186206798,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/bid_generation_service.py",
+      "accessCount": 9,
+      "lastAccessed": 1775185179432,
+      "type": "file"
+    },
+    {
       "path": "backend/tests/test_bid_compliance.py",
       "accessCount": 8,
       "lastAccessed": 1775116159803,
@@ -120,15 +138,9 @@
     },
     {
       "path": "backend/app/models/bid_project.py",
-      "accessCount": 7,
-      "lastAccessed": 1775119919771,
+      "accessCount": 8,
+      "lastAccessed": 1775185065250,
       "type": "directory"
-    },
-    {
-      "path": "backend/app/services/bid_generation_service.py",
-      "accessCount": 5,
-      "lastAccessed": 1775118810503,
-      "type": "file"
     },
     {
       "path": "backend/app/services/generation/writer.py",
@@ -158,6 +170,12 @@
       "path": "backend/app/services/generation/formatter.py",
       "accessCount": 4,
       "lastAccessed": 1775119969169,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/api/v1/chat.py",
+      "accessCount": 4,
+      "lastAccessed": 1775185171509,
       "type": "file"
     },
     {
@@ -209,10 +227,34 @@
       "type": "directory"
     },
     {
-      "path": "backend/tests/conftest.py",
-      "accessCount": 1,
-      "lastAccessed": 1775116014690,
+      "path": ".antigravity_rules.md",
+      "accessCount": 2,
+      "lastAccessed": 1775184227462,
       "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 2,
+      "lastAccessed": 1775184294326,
+      "type": "directory"
+    },
+    {
+      "path": "backend/app/core/config.py",
+      "accessCount": 2,
+      "lastAccessed": 1775185741518,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/conftest.py",
+      "accessCount": 2,
+      "lastAccessed": 1775185761583,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests",
+      "accessCount": 2,
+      "lastAccessed": 1775185764111,
+      "type": "directory"
     },
     {
       "path": "backend/app/services",
@@ -287,12 +329,6 @@
       "type": "file"
     },
     {
-      "path": ".antigravity_rules.md",
-      "accessCount": 1,
-      "lastAccessed": 1775119754122,
-      "type": "file"
-    },
-    {
       "path": "backend/tests/test_generation_reviewer.py",
       "accessCount": 1,
       "lastAccessed": 1775119997951,
@@ -302,6 +338,48 @@
       "path": "backend/tests/test_generation_formatter.py",
       "accessCount": 1,
       "lastAccessed": 1775120025058,
+      "type": "file"
+    },
+    {
+      "path": "docker-compose.yml",
+      "accessCount": 1,
+      "lastAccessed": 1775184298184,
+      "type": "file"
+    },
+    {
+      "path": "backend/Dockerfile",
+      "accessCount": 1,
+      "lastAccessed": 1775184298626,
+      "type": "file"
+    },
+    {
+      "path": "frontend/Dockerfile",
+      "accessCount": 1,
+      "lastAccessed": 1775184299280,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/api/v1/ai.py",
+      "accessCount": 1,
+      "lastAccessed": 1775185039604,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/ai_router.py",
+      "accessCount": 1,
+      "lastAccessed": 1775185065504,
+      "type": "file"
+    },
+    {
+      "path": "backend/requirements.txt",
+      "accessCount": 1,
+      "lastAccessed": 1775185743422,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/main.py",
+      "accessCount": 1,
+      "lastAccessed": 1775185778963,
       "type": "file"
     }
   ],
