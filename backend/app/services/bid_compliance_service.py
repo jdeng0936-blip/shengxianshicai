@@ -17,6 +17,7 @@
 """
 import json
 import re
+from datetime import datetime
 from typing import Optional
 
 from openai import AsyncOpenAI
@@ -251,6 +252,14 @@ class BidComplianceService:
         cred_types = {c.cred_type for c in credentials}
         cred_names = " ".join(c.cred_name for c in credentials).lower()
 
+        # 解析投标截止日（用于资质有效期比对）
+        project_deadline: Optional[datetime] = None
+        if project.deadline:
+            try:
+                project_deadline = datetime.strptime(project.deadline[:10], "%Y-%m-%d")
+            except (ValueError, TypeError):
+                pass
+
         # 拼接所有章节内容用于文本搜索
         all_chapter_text = "\n".join(
             (ch.content or "") for ch in project.chapters
@@ -260,9 +269,15 @@ class BidComplianceService:
 
         for req in project.requirements:
             if req.category == "disqualification":
-                r = self._check_disqualification(req, cred_types, cred_names, all_chapter_text, enterprise)
+                r = self._check_disqualification(
+                    req, cred_types, cred_names, all_chapter_text,
+                    enterprise, credentials, project_deadline,
+                )
             elif req.category == "qualification":
-                r = self._check_qualification(req, cred_types, cred_names, enterprise)
+                r = self._check_qualification(
+                    req, cred_types, cred_names, enterprise,
+                    credentials, project_deadline,
+                )
             elif req.category == "scoring":
                 r = self._check_scoring(req, all_chapter_text)
             elif req.category == "technical":
@@ -332,19 +347,29 @@ class BidComplianceService:
         cred_names: str,
         chapter_text: str,
         enterprise: Optional[Enterprise],
+        credentials: list = None,
+        project_deadline: Optional[datetime] = None,
     ) -> ComplianceResult:
-        """废标项检查 — 最严格：未通过 → failed"""
+        """废标项检查 — 最严格：未通过 → failed（含资质有效期比对）"""
         content = req.content.lower()
+        credentials = credentials or []
 
-        # 资质类废标项
+        # 资质类废标项（类型 + 有效期双重检查）
         for keyword, types in _QUAL_KEYWORD_MAP.items():
             if keyword.lower() in content:
-                if any(t in cred_types for t in types):
-                    continue
-                return ComplianceResult(
-                    req.id, "failed",
-                    f"废标风险：要求「{keyword}」但企业资质库中未找到匹配证照，请立即补充"
+                matching_creds = [c for c in credentials if c.cred_type in types]
+                if not matching_creds:
+                    return ComplianceResult(
+                        req.id, "failed",
+                        f"废标风险：要求「{keyword}」但企业资质库中未找到匹配证照，请立即补充"
+                    )
+                # 检查匹配资质的有效期
+                expiry_issue = self._check_credential_expiry(
+                    matching_creds, project_deadline, keyword
                 )
+                if expiry_issue:
+                    return ComplianceResult(req.id, *expiry_issue)
+                continue
 
         # 冷链车辆要求
         if "冷链车" in content or "冷藏车" in content:
@@ -373,19 +398,28 @@ class BidComplianceService:
         cred_types: set[str],
         cred_names: str,
         enterprise: Optional[Enterprise],
+        credentials: list = None,
+        project_deadline: Optional[datetime] = None,
     ) -> ComplianceResult:
-        """资格要求检查 — 比对资质"""
+        """资格要求检查 — 比对资质（含有效期）"""
         content = req.content.lower()
+        credentials = credentials or []
 
         for keyword, types in _QUAL_KEYWORD_MAP.items():
             if keyword.lower() in content:
-                if any(t in cred_types for t in types):
-                    return ComplianceResult(req.id, "passed", f"已具备「{keyword}」相关资质")
-                # 资格要求未满足是 warning（不一定废标）
-                return ComplianceResult(
-                    req.id, "warning",
-                    f"资格要求「{keyword}」在企业资质库中未找到匹配，建议补充"
+                matching_creds = [c for c in credentials if c.cred_type in types]
+                if not matching_creds:
+                    return ComplianceResult(
+                        req.id, "warning",
+                        f"资格要求「{keyword}」在企业资质库中未找到匹配，建议补充"
+                    )
+                # 检查匹配资质的有效期
+                expiry_issue = self._check_credential_expiry(
+                    matching_creds, project_deadline, keyword
                 )
+                if expiry_issue:
+                    return ComplianceResult(req.id, *expiry_issue)
+                return ComplianceResult(req.id, "passed", f"已具备「{keyword}」相关资质且有效期充足")
 
         # 通用关键词在企业名称中搜索
         if enterprise and enterprise.name:
@@ -393,10 +427,99 @@ class BidComplianceService:
 
         return ComplianceResult(req.id, "warning", "无法自动判定，建议人工核实")
 
+    @staticmethod
+    def _check_credential_expiry(
+        creds: list,
+        project_deadline: Optional[datetime],
+        keyword: str,
+    ) -> Optional[tuple[str, str]]:
+        """检查资质列表中是否有有效的（未过期且截止日前有效的）证照。
+
+        Returns:
+            None — 至少有一个有效资质，检查通过
+            (status, note) — 全部无效时返回，调用方构建 ComplianceResult
+        """
+        now = datetime.now()
+        has_valid = False
+
+        for cred in creds:
+            if cred.is_permanent:
+                has_valid = True
+                continue
+            if not cred.expiry_date:
+                continue
+            try:
+                expiry = datetime.strptime(cred.expiry_date[:10], "%Y-%m-%d")
+            except (ValueError, TypeError):
+                continue
+
+            days_left = (expiry - now).days
+
+            # 已过期
+            if days_left < 0:
+                continue
+            # 将在投标截止日前过期
+            if project_deadline and expiry < project_deadline:
+                continue
+            # 30 天内过期（不影响本次投标但需预警）
+            if days_left <= 30:
+                has_valid = True
+                continue
+            # 有效期充足
+            has_valid = True
+
+        if has_valid:
+            # 额外检查：是否有 30 天内过期的（返回 warning）
+            for cred in creds:
+                if cred.is_permanent or not cred.expiry_date:
+                    continue
+                try:
+                    expiry = datetime.strptime(cred.expiry_date[:10], "%Y-%m-%d")
+                except (ValueError, TypeError):
+                    continue
+                days_left = (expiry - now).days
+                if 0 <= days_left <= 30 and (not project_deadline or expiry >= project_deadline):
+                    return (
+                        "warning",
+                        f"「{keyword}」资质将于 {cred.expiry_date[:10]} 到期"
+                        f"（剩余 {days_left} 天），建议尽快续期"
+                    )
+            return None
+
+        # 全部无效：区分"已过期"和"截止前过期"
+        for cred in creds:
+            if cred.is_permanent or not cred.expiry_date:
+                continue
+            try:
+                expiry = datetime.strptime(cred.expiry_date[:10], "%Y-%m-%d")
+            except (ValueError, TypeError):
+                continue
+            if (expiry - now).days < 0:
+                return (
+                    "failed",
+                    f"「{keyword}」资质（{cred.cred_name}）已于 {cred.expiry_date[:10]} 过期，"
+                    f"投标将被判定资格不合格"
+                )
+            if project_deadline and expiry < project_deadline:
+                return (
+                    "failed",
+                    f"「{keyword}」资质（{cred.cred_name}）将于 {cred.expiry_date[:10]} 到期，"
+                    f"早于投标截止日 {project_deadline.strftime('%Y-%m-%d')}，投标时该资质已失效"
+                )
+
+        return ("failed", f"「{keyword}」资质均无有效期信息，无法确认有效性")
+
     def _check_scoring(
         self, req: TenderRequirement, chapter_text: str
     ) -> ComplianceResult:
-        """评分标准检查 — 关键词在章节中是否有响应"""
+        """评分标准检查 — 关键词覆盖 + 按 max_score 权重分级
+
+        分级规则（与 risk_report_service 对齐）:
+          废标级(is_mandatory) → failed
+          max_score >= 10      → failed（高分漏答视同严重风险）
+          max_score >= 5       → warning
+          max_score < 5        → warning（轻度提示）
+        """
         keywords = self._extract_keywords(req.content)
         if not keywords:
             return ComplianceResult(req.id, "passed", "评分标准已确认")
@@ -409,15 +532,33 @@ class BidComplianceService:
                 req.id, "passed",
                 f"评分关键词覆盖率 {ratio:.0%}（{matched}/{len(keywords)}）"
             )
-        elif ratio > 0:
+
+        # 未充分覆盖 — 按权重分级
+        max_score = req.max_score or 0
+        score_info = f"（分值 {max_score}分）" if max_score else ""
+
+        if req.is_mandatory:
+            return ComplianceResult(
+                req.id, "failed",
+                f"废标级评分项未响应{score_info}，覆盖率 {ratio:.0%}（{matched}/{len(keywords)}），"
+                f"必须在相关章节补充完整响应"
+            )
+        elif max_score >= 10:
+            return ComplianceResult(
+                req.id, "failed",
+                f"高分评分项未充分响应{score_info}，覆盖率 {ratio:.0%}（{matched}/{len(keywords)}），"
+                f"强烈建议补充以避免大幅失分"
+            )
+        elif max_score >= 5:
             return ComplianceResult(
                 req.id, "warning",
-                f"评分关键词覆盖率偏低 {ratio:.0%}（{matched}/{len(keywords)}），建议在相关章节补充响应"
+                f"评分项覆盖不足{score_info}，覆盖率 {ratio:.0%}（{matched}/{len(keywords)}），"
+                f"建议在相关章节补充响应"
             )
         else:
             return ComplianceResult(
                 req.id, "warning",
-                f"评分关键词在投标章节中未找到响应，可能影响得分"
+                f"评分关键词覆盖率偏低 {ratio:.0%}（{matched}/{len(keywords)}），可能影响得分"
             )
 
     def _check_technical(
@@ -461,7 +602,6 @@ class BidComplianceService:
             return []
 
         try:
-            cfg = LLMSelector.get_client_config("compliance_check")
             temperature = LLMSelector.get_temperature("compliance_check")
             max_tokens = LLMSelector.get_max_tokens("compliance_check")
         except (KeyError, ValueError):
@@ -496,17 +636,22 @@ class BidComplianceService:
 [{{"index": 1, "status": "passed", "note": "..."}}, ...]"""
 
         try:
-            client = AsyncOpenAI(
-                api_key=cfg["api_key"],
-                base_url=cfg["base_url"] or None,
+            async def _do_compliance_call(cfg: dict):
+                client = AsyncOpenAI(
+                    api_key=cfg["api_key"],
+                    base_url=cfg["base_url"] or None,
+                )
+                resp = await client.chat.completions.create(
+                    model=cfg["model"],
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                return resp.choices[0].message.content or ""
+
+            text = await LLMSelector.call_with_fallback(
+                "compliance_check", _do_compliance_call
             )
-            response = await client.chat.completions.create(
-                model=cfg["model"],
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            text = response.choices[0].message.content or ""
 
             # 提取 JSON 数组
             import re

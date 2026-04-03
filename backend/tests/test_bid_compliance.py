@@ -22,14 +22,25 @@ def _load_compliance():
 
 class FakeRequirement:
     """Mock TenderRequirement"""
-    def __init__(self, id, content, category="disqualification"):
+    def __init__(self, id, content, category="disqualification", max_score=None, is_mandatory=False):
         self.id = id
         self.content = content
         self.category = category
-        self.max_score = None
+        self.max_score = max_score
+        self.is_mandatory = is_mandatory
         self.score_weight = None
         self.compliance_status = None
         self.compliance_note = None
+
+
+class FakeCredential:
+    """Mock Credential（含有效期字段，用于日期比对测试）"""
+    def __init__(self, cred_type, cred_name="", cred_no="", expiry_date=None, is_permanent=False):
+        self.cred_type = cred_type
+        self.cred_name = cred_name
+        self.cred_no = cred_no
+        self.expiry_date = expiry_date
+        self.is_permanent = is_permanent
 
 
 class FakeEnterprise:
@@ -89,14 +100,19 @@ class TestDisqualificationCheck:
         assert "食品经营许可" in result.note
 
     def test_has_food_license_not_failed(self):
-        """有食品经营许可证 → 不应 failed（可能 passed 或 warning）"""
+        """有食品经营许可证（有效期充足）→ 不应 failed"""
         req = FakeRequirement(1, "投标人须持有有效的食品经营许可证")
+        creds = [
+            FakeCredential("food_license", "食品经营许可证", "JY12345", expiry_date="2027-12-31"),
+            FakeCredential("business_license", "营业执照", "BL001", is_permanent=True),
+        ]
         result = self.svc._check_disqualification(
             req,
             cred_types={"food_license", "business_license"},
             cred_names="食品经营许可证 营业执照",
             chapter_text="我公司持有食品经营许可证",
             enterprise=FakeEnterprise(),
+            credentials=creds,
         )
         assert result.status != "failed"
 
@@ -134,13 +150,15 @@ class TestQualificationCheck:
         self.svc = BidComplianceService(session=None)
 
     def test_haccp_matched(self):
-        """有 HACCP → passed"""
+        """有 HACCP（有效期充足）→ passed"""
         req = FakeRequirement(1, "投标人须通过HACCP体系认证", "qualification")
+        creds = [FakeCredential("haccp", "HACCP认证证书", "HACCP2024001", expiry_date="2027-06-30")]
         result = self.svc._check_qualification(
             req,
             cred_types={"haccp"},
             cred_names="haccp认证",
             enterprise=FakeEnterprise(),
+            credentials=creds,
         )
         assert result.status == "passed"
 
@@ -173,8 +191,8 @@ class TestScoringCheck:
         assert result.status == "passed"
 
     def test_zero_coverage_warns(self):
-        """章节中完全没提到 → warning"""
-        req = FakeRequirement(1, "有机蔬菜种植基地直供方案", "scoring")
+        """章节中完全没提到（低分项）→ warning"""
+        req = FakeRequirement(1, "有机蔬菜种植基地直供方案", "scoring", max_score=3)
         result = self.svc._check_scoring(
             req,
             chapter_text="我公司主营肉类加工业务",

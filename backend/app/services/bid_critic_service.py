@@ -33,15 +33,8 @@ class BidCriticService:
     """
 
     def __init__(self):
-        """初始化 Critic 服务（多 Provider 路由）"""
-        cfg = LLMSelector.get_client_config("compliance_check")
-        self.model = cfg["model"]
+        """初始化 Critic 服务"""
         self.temperature = LLMSelector.get_temperature("compliance_check")
-
-        client_kwargs = {"api_key": cfg["api_key"]}
-        if cfg["base_url"]:
-            client_kwargs["base_url"] = cfg["base_url"]
-        self.client = AsyncOpenAI(**client_kwargs)
 
     # 报价敏感词模式（匹配具体数值+单位的价格承诺）
     _PRICE_PATTERNS = [
@@ -107,14 +100,29 @@ class BidCriticService:
         enterprise_facts = ""
         if enterprise:
             facts = [f"企业名称：{enterprise.name}"]
-            if enterprise.legal_person:
-                facts.append(f"法人代表：{enterprise.legal_person}")
+            if enterprise.legal_representative:
+                facts.append(f"法人代表：{enterprise.legal_representative}")
             if enterprise.registered_capital:
                 facts.append(f"注册资本：{enterprise.registered_capital}")
             if enterprise.cold_chain_vehicles:
                 facts.append(f"冷链车辆：{enterprise.cold_chain_vehicles}辆")
             if enterprise.warehouse_area:
                 facts.append(f"仓库面积：{enterprise.warehouse_area}㎡")
+            if enterprise.cold_storage_area:
+                facts.append(f"冷库面积：{enterprise.cold_storage_area}㎡")
+
+            # 资质证书清单（编号必须原样核查，严禁编造）
+            credentials = chapter_meta.get("credentials", [])
+            if credentials:
+                facts.append("\n== 企业资质证书（编号必须一字不差）==")
+                for cred in credentials:
+                    line = f"  - {cred.get('cred_name', '未知')}"
+                    if cred.get("cred_no"):
+                        line += f"（编号: {cred['cred_no']}）"
+                    if cred.get("expiry_date"):
+                        line += f"，有效期至 {cred['expiry_date']}"
+                    facts.append(line)
+
             enterprise_facts = "\n".join(facts)
 
         # 组装 Critic Prompt
@@ -136,9 +144,10 @@ class BidCriticService:
 
 ## 审查维度
 1. **事实一致性**：文中提及的企业名、资质、设备数据是否与企业事实一致？有无编造数据？
-2. **投标规范**：是否使用了"我方"/"贵方"等标准投标用语？有无口语化表达？
-3. **完整性**：是否覆盖了招标要求中的关键评分点？有无遗漏？
-4. **字数合理性**：内容是否充实（不少于500字）？有无明显注水或过于空泛？
+2. **资质编号核查**：文中引用的资质证书名称和编号是否与企业资质清单完全一致？编号是否一字不差？如发现编造或篡改的资质编号，必须标记为严重问题。
+3. **投标规范**：是否使用了"我方"/"贵方"等标准投标用语？有无口语化表达？
+4. **完整性**：是否覆盖了招标要求中的关键评分点？有无遗漏？
+5. **字数合理性**：内容是否充实（不少于500字）？有无明显注水或过于空泛？
 
 ## 输出要求
 请严格按以下 JSON 格式输出审查结果（不要添加 markdown 标记）：
@@ -150,15 +159,23 @@ class BidCriticService:
 """
 
         try:
-            # 调用 LLM 执行审查
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": critic_prompt}],
-                temperature=self.temperature,
-                max_tokens=2048,
-            )
+            # 调用 LLM 执行审查（带自动容灾 fallback）
+            async def _do_critic(cfg: dict) -> str:
+                client = AsyncOpenAI(
+                    api_key=cfg["api_key"],
+                    base_url=cfg["base_url"] or None,
+                )
+                resp = await client.chat.completions.create(
+                    model=cfg["model"],
+                    messages=[{"role": "user", "content": critic_prompt}],
+                    temperature=self.temperature,
+                    max_tokens=2048,
+                )
+                return resp.choices[0].message.content or "{}"
 
-            critic_result_text = response.choices[0].message.content or "{}"
+            critic_result_text = await LLMSelector.call_with_fallback(
+                "compliance_check", _do_critic
+            )
 
             # 解析审查结果
             import json
@@ -215,14 +232,24 @@ class BidCriticService:
 5. 直接输出修改后的完整章节内容，不要添加任何说明文字
 """
 
-            rewrite_response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": rewrite_prompt}],
-                temperature=0.2,
-                max_tokens=LLMSelector.get_max_tokens("bid_section_generate"),
-            )
+            _rewrite_max = LLMSelector.get_max_tokens("bid_section_generate")
 
-            rewritten_content = rewrite_response.choices[0].message.content or content
+            async def _do_rewrite(cfg: dict) -> str:
+                client = AsyncOpenAI(
+                    api_key=cfg["api_key"],
+                    base_url=cfg["base_url"] or None,
+                )
+                resp = await client.chat.completions.create(
+                    model=cfg["model"],
+                    messages=[{"role": "user", "content": rewrite_prompt}],
+                    temperature=0.2,
+                    max_tokens=_rewrite_max,
+                )
+                return resp.choices[0].message.content or content
+
+            rewritten_content = await LLMSelector.call_with_fallback(
+                "compliance_check", _do_rewrite
+            )
 
             meta["rewritten"] = True
             meta["final_length"] = len(rewritten_content)

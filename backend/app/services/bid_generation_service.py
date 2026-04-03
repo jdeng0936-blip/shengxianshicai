@@ -224,13 +224,34 @@ class BidGenerationService:
         return "无特定专项要求，请按通用投标文件规范撰写。"
 
     async def _get_llm_client(self) -> tuple[AsyncOpenAI, str]:
-        """获取 LLM 客户端和模型名（多 Provider 路由）"""
+        """获取 LLM 客户端和模型名（多 Provider 路由 + 熔断跳过）"""
         cfg = LLMSelector.get_client_config("bid_section_generate")
         client = AsyncOpenAI(
             api_key=cfg["api_key"],
             base_url=cfg["base_url"] or None,
         )
         return client, cfg["model"]
+
+    async def _call_llm_with_fallback(self, messages: list[dict], **kwargs) -> str:
+        """带自动容灾的 LLM 调用（遍历 fallback 链）"""
+        temperature = kwargs.pop("temperature", LLMSelector.get_temperature("bid_section_generate"))
+        max_tokens = kwargs.pop("max_tokens", LLMSelector.get_max_tokens("bid_section_generate"))
+
+        async def _do_call(cfg: dict) -> str:
+            client = AsyncOpenAI(
+                api_key=cfg["api_key"],
+                base_url=cfg["base_url"] or None,
+            )
+            resp = await client.chat.completions.create(
+                model=cfg["model"],
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+            return resp.choices[0].message.content or ""
+
+        return await LLMSelector.call_with_fallback("bid_section_generate", _do_call)
 
     async def _rag_retrieve(self, query: str, tenant_id: int, top_k: int = 5) -> str:
         """RAG 检索知识库"""
@@ -495,6 +516,10 @@ class BidGenerationService:
             "name": chapter.name,
             "chapter_no": chapter.chapter_no,
             "requirements": [r.content for r in project.requirements] if project.requirements else [],
+            "credentials": [
+                {"cred_name": c.cred_name, "cred_no": c.cred_no, "expiry_date": c.expiry_date}
+                for c in creds
+            ] if creds else [],
         }
         content, critic_meta = await critic.critic_and_rewrite(
             content, chapter_meta, enterprise
@@ -686,6 +711,10 @@ class BidGenerationService:
                 "name": chapter.title,
                 "chapter_no": chapter.chapter_no,
                 "requirements": [r.content for r in project.requirements] if project.requirements else [],
+                "credentials": [
+                    {"cred_name": c.cred_name, "cred_no": c.cred_no, "expiry_date": c.expiry_date}
+                    for c in creds
+                ] if creds else [],
             }
             content, critic_meta = await critic.critic_and_rewrite(
                 content, chapter_meta, enterprise
