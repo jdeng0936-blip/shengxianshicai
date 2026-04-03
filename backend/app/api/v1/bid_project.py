@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import uuid as _uuid
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -771,7 +771,13 @@ from pydantic import BaseModel as _BaseModel, Field as _Field
 class RewriteRequest(_BaseModel):
     text: str = _Field(min_length=1, description="选中的文本")
     action: str = _Field("polish", description="操作: polish/expand/condense/rewrite")
-    context: str | None = _Field(None, description="章节标题等上下文")
+    context: Optional[str] = _Field(None, description="章节标题等上下文")
+
+
+class ChapterRewriteRequest(_BaseModel):
+    """章节局部重写请求 — 支持自定义指令"""
+    original_text: str = _Field(min_length=1, description="被选中的原文本")
+    instruction: str = _Field(min_length=1, description="改写指令，如「语气改正式一点」「削减篇幅」「补充数据支撑」")
 
 
 @router.post("/{project_id}/rewrite-selection", response_model=ApiResponse)
@@ -824,6 +830,67 @@ async def rewrite_selection(
             "original": body.text,
             "rewritten": result_text,
             "action": body.action,
+            "model": cfg["model"],
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 重写失败: {str(e)}")
+
+
+@router.post("/{project_id}/chapters/{chapter_id}/rewrite", response_model=ApiResponse)
+async def rewrite_chapter_segment(
+    project_id: int,
+    chapter_id: int,
+    body: ChapterRewriteRequest,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """章节局部重写 — 用户提供自定义改写指令
+
+    不直接修改 DB，返回重写后的文本片段供前端替换选区。
+    """
+    from openai import AsyncOpenAI
+    from app.core.llm_selector import LLMSelector
+
+    # 加载章节标题作为上下文
+    from app.services.bid_project_service import BidProjectService
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    chapter = next((ch for ch in project.chapters if ch.id == chapter_id), None)
+    chapter_context = f"{chapter.chapter_no} {chapter.title}" if chapter else ""
+
+    prompt = (
+        f"你是资深的投标文件修改专家。请按照用户的指令对以下投标文件段落进行改写。\n\n"
+        f"== 用户指令 ==\n{body.instruction}\n\n"
+        f"== 所属章节 ==\n{chapter_context}\n\n"
+        f"== 原文 ==\n{body.original_text}\n\n"
+        f"要求：\n"
+        f"- 严格按照用户指令改写，不偏离指令意图\n"
+        f"- 使用专业的投标文件用语\n"
+        f"- 保持 Markdown 格式\n"
+        f"- 只输出改写后的文本，不加任何解释说明"
+    )
+
+    try:
+        cfg = LLMSelector.get_client_config("bid_section_generate")
+        client = AsyncOpenAI(
+            api_key=cfg["api_key"],
+            base_url=cfg["base_url"] or None,
+        )
+        response = await client.chat.completions.create(
+            model=cfg["model"],
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            max_tokens=4096,
+        )
+        result_text = response.choices[0].message.content or ""
+        return ApiResponse(data={
+            "original": body.original_text,
+            "rewritten": result_text,
+            "instruction": body.instruction,
             "model": cfg["model"],
         })
     except Exception as e:

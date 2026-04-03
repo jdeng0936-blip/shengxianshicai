@@ -84,6 +84,9 @@ class BidChapterOut(BaseModel):
     ai_model_used: Optional[str] = None
     ai_prompt_version: Optional[str] = None
     has_warning: bool = False
+    edit_ratio: Optional[float] = None
+    ai_ratio: float = 0.0
+    source_tags: str = ""
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

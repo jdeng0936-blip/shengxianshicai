@@ -33,7 +33,16 @@ interface BidChapter {
   sort_order: number;
   ai_model_used?: string;
   has_warning: boolean;
+  ai_ratio: number;
+  source_tags: string;
 }
+
+const SOURCE_TAG_CONFIG: Record<string, { label: string; color: string }> = {
+  ai_generated: { label: "AI 生成", color: "bg-purple-100 text-purple-700" },
+  company_db: { label: "企业库", color: "bg-green-100 text-green-700" },
+  template: { label: "模板", color: "bg-blue-100 text-blue-700" },
+  credential: { label: "资质", color: "bg-amber-100 text-amber-700" },
+};
 
 const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   draft: { label: "草稿", variant: "secondary" },
@@ -60,6 +69,8 @@ export default function ChaptersEditorPage() {
   const [exporting, setExporting] = useState(false);
   const [selection, setSelection] = useState<{ text: string; start: number; end: number } | null>(null);
   const [rewriting, setRewriting] = useState(false);
+  const [customInstruction, setCustomInstruction] = useState("");
+  const [customRewriting, setCustomRewriting] = useState(false);
 
   const fetchChapters = useCallback(async () => {
     try {
@@ -312,6 +323,38 @@ export default function ChaptersEditorPage() {
     }
   };
 
+  const handleCustomRewrite = async () => {
+    if (!selection || !selectedChapter || !customInstruction.trim()) return;
+    setCustomRewriting(true);
+    try {
+      const res = await api.post(
+        `/bid-projects/${projectId}/chapters/${selectedChapter.id}/rewrite`,
+        { original_text: selection.text, instruction: customInstruction }
+      );
+      const rewritten = res.data?.data?.rewritten;
+      if (rewritten) {
+        const newContent =
+          editContent.slice(0, selection.start) +
+          rewritten +
+          editContent.slice(selection.end);
+        setEditContent(newContent);
+        setSelection(null);
+        setCustomInstruction("");
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "自定义重写失败");
+    } finally {
+      setCustomRewriting(false);
+    }
+  };
+
+  // 计算项目整体 AI 占比（加权平均）
+  const projectAiRatio = chapters.length > 0
+    ? chapters.reduce((sum, ch) => sum + (ch.ai_ratio || 0), 0) / chapters.length
+    : 0;
+  const aiRatioPct = Math.round(projectAiRatio * 100);
+  const aiRatioSafe = aiRatioPct <= 30;
+
   const selectedChapter = chapters.find((ch) => ch.id === selectedId);
 
   if (loading && chapters.length === 0) {
@@ -372,6 +415,33 @@ export default function ChaptersEditorPage() {
           )}
         </div>
       </div>
+
+      {/* AI 占比仪表盘 */}
+      {chapters.length > 0 && (
+        <div className={`flex items-center gap-3 rounded-lg border p-3 ${
+          aiRatioSafe ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"
+        }`}>
+          <div className={`text-sm font-medium ${aiRatioSafe ? "text-green-700" : "text-amber-700"}`}>
+            {aiRatioSafe ? "✅" : "⚠️"} AI 内容占比
+          </div>
+          <div className="flex-1">
+            <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  aiRatioSafe ? "bg-green-500" : "bg-amber-500"
+                }`}
+                style={{ width: `${Math.min(aiRatioPct, 100)}%` }}
+              />
+            </div>
+          </div>
+          <span className={`text-sm font-bold ${aiRatioSafe ? "text-green-700" : "text-amber-700"}`}>
+            {aiRatioPct}%
+          </span>
+          <span className="text-xs text-slate-500">
+            {aiRatioSafe ? "反AI检测安全" : "建议人工润色降低AI占比"}
+          </span>
+        </div>
+      )}
 
       {/* 进度条 */}
       {generatingAll && progress && progress.total > 0 && (
@@ -452,13 +522,28 @@ export default function ChaptersEditorPage() {
                         {selectedChapter.ai_model_used && (
                           <span>模型: {selectedChapter.ai_model_used}</span>
                         )}
+                        {/* 来源标签徽章 */}
+                        {selectedChapter.source_tags && selectedChapter.source_tags.split(",").filter(Boolean).map((tag) => {
+                          const cfg = SOURCE_TAG_CONFIG[tag.trim()];
+                          return cfg ? (
+                            <Badge key={tag} className={`text-xs ${cfg.color}`}>
+                              {cfg.label}
+                            </Badge>
+                          ) : null;
+                        })}
+                        {/* 本章 AI 占比 */}
+                        {selectedChapter.ai_ratio > 0 && (
+                          <span className={`font-medium ${selectedChapter.ai_ratio > 0.3 ? "text-amber-600" : "text-green-600"}`}>
+                            AI {Math.round(selectedChapter.ai_ratio * 100)}%
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       {/* AI 划词重写按钮组 — 选中文本时显示 */}
                       {selection && (
                         <div className="flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1">
-                          {rewriting ? (
+                          {rewriting || customRewriting ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
                           ) : (
                             <>
@@ -467,6 +552,24 @@ export default function ChaptersEditorPage() {
                               <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => handleRewrite("expand")}>扩写</Button>
                               <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => handleRewrite("condense")}>精简</Button>
                               <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => handleRewrite("rewrite")}>重写</Button>
+                              <div className="mx-1 h-4 w-px bg-blue-200" />
+                              <input
+                                type="text"
+                                placeholder="自定义指令..."
+                                value={customInstruction}
+                                onChange={(e) => setCustomInstruction(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && handleCustomRewrite()}
+                                className="h-6 w-32 rounded border border-blue-300 bg-white px-1.5 text-xs outline-none focus:ring-1 focus:ring-blue-400"
+                              />
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-2 text-xs text-blue-700"
+                                onClick={handleCustomRewrite}
+                                disabled={!customInstruction.trim()}
+                              >
+                                执行
+                              </Button>
                             </>
                           )}
                         </div>
