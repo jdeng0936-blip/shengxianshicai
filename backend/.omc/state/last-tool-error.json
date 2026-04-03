@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"python -m pytest tests/test_generation_reviewer.py -v --tb=short 2>&1\",\"timeout\":30000,\"description\":\"运行 reviewer 全部测试\"}",
+  "tool_input_preview": "{\"command\":\"python -m pytest tests/test_generation_compliance_gate.py::TestProjectContextConsistency -v --tb=short 2>&1\",\"timeout\":30000,\"description\":\"重跑项目上下文测试\"}",
   "error": "Exit code 1\n============================= test session starts ==============================\nplatform darwin -- Python 3.11.15, pytest-9.0.2, pluggy-1.6.0 -- /Users/hycdq2026/.pyenv/versions/3.11.15/bin/python\ncachedir: .pytest_cache\nrootdir: /Users/hycdq2026/Desktop/shangxianshicai/-/backend\nconfigfile: pytest.ini\nplugins: asyncio-1.3.0, langsmith-0.7.24, anyio-4.13.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollecti...",
-  "timestamp": "2026-04-03T04:47:24.480Z",
-  "retry_count": 1
+  "timestamp": "2026-04-03T06:57:51.032Z",
+  "retry_count": 4
 }

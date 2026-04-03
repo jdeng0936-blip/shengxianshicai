@@ -137,22 +137,33 @@ class LLMSelector:
     def get_client_config(task_type: str) -> dict:
         """获取完整的客户端配置（api_key + base_url + model）
 
-        Returns:
-            {"api_key": "sk-xxx", "base_url": "https://...", "model": "gpt-5.4"}
+        自动跳过熔断中的 provider，选择第一个可用的。
 
-        用法:
-            cfg = LLMSelector.get_client_config("bid_section_generate")
-            client = AsyncOpenAI(api_key=cfg["api_key"], base_url=cfg["base_url"])
-            response = await client.chat.completions.create(model=cfg["model"], ...)
+        Returns:
+            {"api_key": "sk-xxx", "base_url": "https://...", "model": "gpt-5.4", "provider": "openai"}
         """
+        from app.core.circuit_breaker import is_available
+
         config = LLMSelector.get_config(task_type)
         models = config.get("models", [])
         if not models:
             raise ValueError(f"任务 '{task_type}' 的 models 列表为空")
 
+        # 选择第一个可用的 provider
+        for model_ref in models:
+            provider, model_name = _parse_model_ref(model_ref)
+            if is_available(provider):
+                provider_cfg = _get_provider_config(provider)
+                return {
+                    "api_key": provider_cfg["api_key"],
+                    "base_url": provider_cfg["base_url"],
+                    "model": model_name,
+                    "provider": provider,
+                }
+
+        # 全部熔断时降级到第一个（强制尝试）
         provider, model_name = _parse_model_ref(models[0])
         provider_cfg = _get_provider_config(provider)
-
         return {
             "api_key": provider_cfg["api_key"],
             "base_url": provider_cfg["base_url"],
@@ -201,6 +212,56 @@ class LLMSelector:
     def get_max_tokens(task_type: str) -> int:
         config = LLMSelector.get_config(task_type)
         return int(config.get("max_tokens", 2048))
+
+    @staticmethod
+    async def call_with_fallback(task_type: str, call_fn, timeout: float = 30.0):
+        """带自动容灾的 LLM 调用包装器
+
+        遍历 task_type 的 models fallback 链，跳过熔断 provider，
+        成功时记录健康状态，失败时记录并尝试下一个。
+
+        Args:
+            task_type: 任务类型（对应 llm_registry.yaml 的 key）
+            call_fn: 异步调用函数，签名: async (client_config: dict) -> result
+                     client_config 含 api_key, base_url, model, provider
+            timeout: 单次调用超时秒数
+
+        Returns:
+            call_fn 的返回值
+
+        Raises:
+            RuntimeError: 所有 provider 均失败
+        """
+        import asyncio
+        from app.core.circuit_breaker import is_available, record_success, record_failure
+
+        all_models = LLMSelector.get_all_models(task_type)
+        if not all_models:
+            raise ValueError(f"任务 '{task_type}' 无可用模型")
+
+        errors = []
+        for cfg in all_models:
+            provider = cfg["provider"]
+            if not is_available(provider):
+                continue
+
+            try:
+                result = await asyncio.wait_for(call_fn(cfg), timeout=timeout)
+                record_success(provider)
+                return result
+            except asyncio.TimeoutError:
+                msg = f"{provider}/{cfg['model']} 超时 ({timeout}s)"
+                record_failure(provider, msg)
+                errors.append(msg)
+            except Exception as e:
+                msg = f"{provider}/{cfg['model']}: {type(e).__name__}: {str(e)[:100]}"
+                record_failure(provider, msg)
+                errors.append(msg)
+
+        # 全部失败
+        raise RuntimeError(
+            f"LLM 调用全部失败 (task={task_type}): " + " | ".join(errors)
+        )
 
     @staticmethod
     def list_task_types() -> list[str]:
