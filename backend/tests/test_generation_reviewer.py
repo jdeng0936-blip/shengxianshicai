@@ -1,5 +1,7 @@
 """
-Node 6 reviewer 单元测试 — 纯规则匹配，无外部依赖
+Node 6 reviewer 单元测试 — 关键词匹配 + 语义相似度双模式
+
+语义模式使用 mock embed_fn，严禁调用真实 LLM/Embedding API。
 """
 import pytest
 
@@ -9,6 +11,8 @@ from app.services.generation.reviewer import (
     ScoringCoverage,
     _extract_keywords,
     _calc_coverage,
+    _cosine_similarity,
+    _chunk_text,
 )
 from app.services.generation.polish_pipeline import PolishResult
 
@@ -150,3 +154,218 @@ class TestReviewScoringCoverage:
         report_low = await review_scoring_coverage(chapters, reqs, threshold=0.1)
 
         assert len(report_high.uncovered_items) >= len(report_low.uncovered_items)
+
+
+# ═══════════════════════════════════════════════════════════
+# 语义相似度工具函数
+# ═══════════════════════════════════════════════════════════
+
+class TestCosineSimilarity:
+
+    def test_identical_vectors(self):
+        v = [1.0, 0.0, 0.5]
+        assert _cosine_similarity(v, v) == pytest.approx(1.0, abs=0.001)
+
+    def test_orthogonal_vectors(self):
+        a = [1.0, 0.0]
+        b = [0.0, 1.0]
+        assert _cosine_similarity(a, b) == pytest.approx(0.0, abs=0.001)
+
+    def test_opposite_vectors(self):
+        a = [1.0, 0.0]
+        b = [-1.0, 0.0]
+        assert _cosine_similarity(a, b) == pytest.approx(-1.0, abs=0.001)
+
+    def test_zero_vector(self):
+        assert _cosine_similarity([0.0, 0.0], [1.0, 2.0]) == 0.0
+
+
+class TestChunkText:
+
+    def test_short_text(self):
+        chunks = _chunk_text("短文本")
+        assert chunks == ["短文本"]
+
+    def test_empty_text(self):
+        chunks = _chunk_text("")
+        assert chunks == [""]
+
+    def test_long_text_chunks(self):
+        text = "A" * 2000
+        chunks = _chunk_text(text, chunk_size=800, overlap=200)
+        assert len(chunks) > 1
+        # 所有块不超过 chunk_size
+        assert all(len(c) <= 800 for c in chunks)
+        # 合并块覆盖原文
+        combined = chunks[0]
+        for c in chunks[1:]:
+            combined += c[200:]  # 跳过重叠部分
+        assert len(combined) >= len(text)
+
+
+# ═══════════════════════════════════════════════════════════
+# 语义覆盖校验（mock embed_fn，严禁真实 API）
+# ═══════════════════════════════════════════════════════════
+
+def _make_mock_embed_fn(similarity_map: dict[tuple[str, str], float]):
+    """创建 mock embed_fn，根据预设的相似度矩阵返回假向量
+
+    原理：为每个文本分配一个唯一单位向量方向，
+    通过调整角度使 cosine similarity 匹配预期值。
+    简化实现：直接用文本内容做 hash 生成伪向量。
+    """
+    import hashlib
+
+    dim = 64
+
+    def _text_to_vec(text: str) -> list[float]:
+        h = hashlib.sha256(text.encode()).digest()
+        raw = [float(b) / 255.0 for b in h[:dim]]
+        norm = sum(x * x for x in raw) ** 0.5
+        return [x / norm for x in raw] if norm > 0 else raw
+
+    async def mock_embed(texts: list[str]) -> list[list[float] | None]:
+        return [_text_to_vec(t) for t in texts]
+
+    return mock_embed
+
+
+def _make_controlled_embed_fn():
+    """创建可精确控制相似度的 mock embed_fn
+
+    「冷链」系列文本 → 相似向量方向
+    「有机蔬菜」系列文本 → 正交向量方向
+    """
+    dim = 8
+
+    def _normalize(v):
+        norm = sum(x * x for x in v) ** 0.5
+        return [x / norm for x in v] if norm > 0 else v
+
+    # 两个正交基向量
+    cold_chain_base = _normalize([1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    organic_base = _normalize([0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0])
+    meat_base = _normalize([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0])
+
+    keyword_map = {
+        "冷链": cold_chain_base,
+        "配送": cold_chain_base,
+        "温控": cold_chain_base,
+        "低温": cold_chain_base,
+        "有机": organic_base,
+        "蔬菜": organic_base,
+        "种植": organic_base,
+        "肉类": meat_base,
+        "加工": meat_base,
+    }
+
+    def _text_to_vec(text: str) -> list[float]:
+        # 累加匹配到的基向量
+        vec = [0.0] * dim
+        matched = False
+        for kw, base in keyword_map.items():
+            if kw in text:
+                vec = [a + b for a, b in zip(vec, base)]
+                matched = True
+        if not matched:
+            # 默认给一个随机方向
+            vec = [float(i + 1) for i in range(dim)]
+        return _normalize(vec)
+
+    async def mock_embed(texts: list[str]) -> list[list[float] | None]:
+        return [_text_to_vec(t) for t in texts]
+
+    return mock_embed
+
+
+class TestSemanticCoverage:
+
+    @pytest.mark.asyncio
+    async def test_semantic_high_similarity(self):
+        """语义相似的文本应判定为高覆盖"""
+        chapters = [_chapter(content="全程低温冷链配送温控方案，确保食材新鲜")]
+        reqs = [_req(1, "冷链配送方案及温控措施", 15.0)]
+        embed_fn = _make_controlled_embed_fn()
+
+        report = await review_scoring_coverage(
+            chapters, reqs, threshold=0.6, embed_fn=embed_fn
+        )
+
+        assert report.overall_coverage >= 0.6
+        assert len(report.uncovered_items) == 0
+
+    @pytest.mark.asyncio
+    async def test_semantic_low_similarity(self):
+        """语义不相关的文本应判定为未覆盖"""
+        chapters = [_chapter(content="本公司主营肉类加工业务")]
+        reqs = [_req(1, "有机蔬菜种植基地直供方案", 20.0)]
+        embed_fn = _make_controlled_embed_fn()
+
+        report = await review_scoring_coverage(
+            chapters, reqs, threshold=0.6, embed_fn=embed_fn
+        )
+
+        assert len(report.uncovered_items) == 1
+        assert "语义相似度" in report.uncovered_items[0].gap_note
+
+    @pytest.mark.asyncio
+    async def test_semantic_covered_in_tracking(self):
+        """语义模式下 covered_in 正确追踪匹配章节"""
+        chapters = [
+            _chapter("第三章", content="冷链配送方案低温运输温控"),
+            _chapter("第四章", content="有机蔬菜种植基地管理"),
+        ]
+        reqs = [_req(1, "冷链配送方案及温控措施")]
+        embed_fn = _make_controlled_embed_fn()
+
+        report = await review_scoring_coverage(
+            chapters, reqs, threshold=0.3, embed_fn=embed_fn
+        )
+
+        item = report.scoring_items[0]
+        assert "第三章" in item.covered_in
+
+    @pytest.mark.asyncio
+    async def test_fallback_on_embed_error(self):
+        """embed_fn 抛异常时降级到关键词匹配"""
+        async def broken_embed(texts):
+            raise RuntimeError("API 不可用")
+
+        chapters = [_chapter(content="冷链配送方案全程温控措施")]
+        reqs = [_req(1, "冷链配送方案及温控措施", 15.0)]
+
+        report = await review_scoring_coverage(
+            chapters, reqs, threshold=0.6, embed_fn=broken_embed
+        )
+
+        # 降级后仍然能产出报告
+        assert report.overall_coverage >= 0.0
+        assert len(report.scoring_items) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_embed_fn_uses_keywords(self):
+        """不传 embed_fn 时走关键词路径（向后兼容）"""
+        chapters = [_chapter(content="冷链配送方案全程温控措施")]
+        reqs = [_req(1, "冷链配送方案及温控措施", 15.0)]
+
+        report = await review_scoring_coverage(chapters, reqs, threshold=0.6)
+
+        assert report.overall_coverage >= 0.6
+        assert len(report.scoring_items) == 1
+
+    @pytest.mark.asyncio
+    async def test_semantic_weighted_coverage(self):
+        """语义模式下整体覆盖率按分值加权"""
+        chapters = [_chapter(content="冷链配送低温运输温控方案")]
+        reqs = [
+            _req(1, "冷链配送方案及温控措施", 20.0),
+            _req(2, "有机蔬菜基地直供", 5.0),
+        ]
+        embed_fn = _make_controlled_embed_fn()
+
+        report = await review_scoring_coverage(
+            chapters, reqs, threshold=0.6, embed_fn=embed_fn
+        )
+
+        # 高分冷链项覆盖好 + 低分蔬菜项覆盖差 → 加权整体偏高
+        assert report.overall_coverage > 0.3
