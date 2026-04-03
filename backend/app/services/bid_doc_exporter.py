@@ -92,8 +92,18 @@ class BidDocExporter:
         # 2. 预加载图片
         await self._preload_images(project.enterprise_id, tenant_id)
 
-        # 3. 渲染 Word
-        file_path = self._render_docx(project, enterprise, credentials, quotation)
+        # 2.5 检查是否为免费试用（试用版加水印）
+        is_trial = False
+        try:
+            from app.services.payment_service import PaymentService
+            pay_svc = PaymentService(self.session, tenant_id)
+            sub_info = await pay_svc.check_quota()
+            is_trial = sub_info.get("plan_type") == "free_trial"
+        except Exception:
+            pass  # 支付服务不可用时默认不加水印
+
+        # 3. 渲染 Word（试用版带水印）
+        file_path = self._render_docx(project, enterprise, credentials, quotation, watermark=is_trial)
 
         # 3. 更新项目的投标文件路径
         project.bid_doc_path = file_path

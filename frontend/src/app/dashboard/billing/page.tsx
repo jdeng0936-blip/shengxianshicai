@@ -7,82 +7,107 @@ import { Button } from "@/components/ui/button";
 import {
   Zap,
   FileText,
-  Download,
-  Bot,
   Crown,
   Loader2,
+  CheckCircle2,
+  Clock,
+  ShoppingCart,
 } from "lucide-react";
 import api from "@/lib/api";
 
-const PLAN_CONFIG = {
-  free: { label: "免费版", color: "bg-slate-100 text-slate-600", icon: Zap },
-  basic: { label: "基础版", color: "bg-blue-100 text-blue-700", icon: Zap },
-  pro: { label: "专业版", color: "bg-purple-100 text-purple-700", icon: Crown },
-  enterprise: { label: "企业版", color: "bg-amber-100 text-amber-700", icon: Crown },
+const PLAN_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
+  free_trial: { label: "免费试用", color: "bg-slate-100 text-slate-600", icon: Zap },
+  per_document: { label: "按篇付费", color: "bg-blue-100 text-blue-700", icon: FileText },
+  quarterly: { label: "季度包", color: "bg-purple-100 text-purple-700", icon: Crown },
+  yearly: { label: "年度包", color: "bg-amber-100 text-amber-700", icon: Crown },
 };
 
-interface QuotaItem {
-  used: number;
-  max: number;
-}
-
-interface UsageStats {
+interface SubscriptionInfo {
   plan_type: string;
-  projects: QuotaItem;
-  exports: QuotaItem;
-  ai_calls: QuotaItem;
+  remaining_quota: number;
+  is_active: boolean;
+  total_quota: number;
+  used_count: number;
+  end_date: string | null;
 }
 
-function ProgressBar({ used, max, label, icon: Icon }: { used: number; max: number; label: string; icon: any }) {
-  const pct = max > 0 ? Math.min((used / max) * 100, 100) : 0;
-  const isLow = pct > 80;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
-          <Icon className="h-4 w-4" />
-          {label}
-        </div>
-        <span className={`text-sm font-bold ${isLow ? "text-red-600" : "text-slate-600"}`}>
-          {used} / {max}
-        </span>
-      </div>
-      <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-        <div
-          className={`h-full rounded-full transition-all ${
-            isLow ? "bg-red-500" : pct > 50 ? "bg-amber-500" : "bg-blue-500"
-          }`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
+const PRICING = [
+  {
+    type: "per_document",
+    label: "按篇付费",
+    price: "¥199",
+    unit: "/篇",
+    features: ["单篇投标文件生成", "含风险报告", "无水印导出", "即买即用"],
+    recommended: false,
+    color: "border-blue-200",
+  },
+  {
+    type: "quarterly",
+    label: "季度包",
+    price: "¥999",
+    unit: "/季度",
+    features: ["10篇投标文件", "含风险报告", "无水印导出", "有效期90天", "平均¥99.9/篇"],
+    recommended: true,
+    color: "border-purple-300 bg-purple-50/30",
+  },
+  {
+    type: "yearly",
+    label: "年度包",
+    price: "¥2988",
+    unit: "/年",
+    features: ["不限篇数", "含风险报告", "无水印导出", "有效期365天", "优先技术支持"],
+    recommended: false,
+    color: "border-amber-200",
+  },
+];
 
 export default function BillingPage() {
-  const [stats, setStats] = useState<UsageStats | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ordering, setOrdering] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchQuota = async () => {
+    const fetchSubscription = async () => {
       try {
-        const res = await api.get("/billing/quota");
-        setStats(res.data?.data || null);
+        const res = await api.get("/subscriptions/current");
+        setSubscription(res.data?.data || null);
       } catch {
-        // API 不可用时使用默认值
-        setStats({
-          plan_type: "free",
-          projects: { used: 0, max: 5 },
-          exports: { used: 0, max: 10 },
-          ai_calls: { used: 0, max: 100 },
+        setSubscription({
+          plan_type: "free_trial",
+          remaining_quota: 1,
+          is_active: true,
+          total_quota: 1,
+          used_count: 0,
+          end_date: null,
         });
       } finally {
         setLoading(false);
       }
     };
-    fetchQuota();
+    fetchSubscription();
   }, []);
+
+  const handleOrder = async (orderType: string) => {
+    setOrdering(orderType);
+    try {
+      const res = await api.post("/payments/create-order", {
+        order_type: orderType,
+        payment_method: "manual",
+      });
+      const data = res.data?.data;
+      alert(
+        `订单创建成功！\n\n订单号: ${data.order_no}\n金额: ¥${data.amount}\n\n` +
+        `请联系管理员完成付款确认。`
+      );
+      // 刷新订阅状态
+      const subRes = await api.get("/subscriptions/current");
+      setSubscription(subRes.data?.data || null);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "创建订单失败");
+    } finally {
+      setOrdering(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -92,14 +117,17 @@ export default function BillingPage() {
     );
   }
 
-  const plan = PLAN_CONFIG[stats?.plan_type as keyof typeof PLAN_CONFIG] || PLAN_CONFIG.free;
+  const plan = PLAN_CONFIG[subscription?.plan_type || "free_trial"] || PLAN_CONFIG.free_trial;
   const PlanIcon = plan.icon;
+  const quotaDisplay = subscription?.plan_type === "yearly"
+    ? "不限"
+    : `${subscription?.remaining_quota ?? 0} 篇`;
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-slate-800">计费中心</h2>
 
-      {/* 当前套餐 */}
+      {/* 当前订阅状态 */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -110,94 +138,99 @@ export default function BillingPage() {
             <Badge className={plan.color}>{plan.label}</Badge>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {stats && (
-            <>
-              <ProgressBar
-                used={stats.projects.used}
-                max={stats.projects.max}
-                label="投标项目"
-                icon={FileText}
-              />
-              <ProgressBar
-                used={stats.exports.used}
-                max={stats.exports.max}
-                label="文档导出"
-                icon={Download}
-              />
-              <ProgressBar
-                used={stats.ai_calls.used}
-                max={stats.ai_calls.max}
-                label="AI 调用"
-                icon={Bot}
-              />
-            </>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            {/* 剩余配额 */}
+            <div className="rounded-lg bg-blue-50 p-4 text-center">
+              <div className="text-2xl font-bold text-blue-700">{quotaDisplay}</div>
+              <div className="text-xs text-blue-600">剩余配额</div>
+            </div>
+            {/* 已使用 */}
+            <div className="rounded-lg bg-slate-50 p-4 text-center">
+              <div className="text-2xl font-bold">{subscription?.used_count ?? 0}</div>
+              <div className="text-xs text-slate-500">已使用</div>
+            </div>
+            {/* 总配额 */}
+            <div className="rounded-lg bg-slate-50 p-4 text-center">
+              <div className="text-2xl font-bold">
+                {subscription?.plan_type === "yearly" ? "不限" : subscription?.total_quota ?? 0}
+              </div>
+              <div className="text-xs text-slate-500">总配额</div>
+            </div>
+            {/* 到期时间 */}
+            <div className="rounded-lg bg-slate-50 p-4 text-center">
+              <div className="flex items-center justify-center gap-1">
+                <Clock className="h-4 w-4 text-slate-400" />
+                <span className="text-sm font-medium text-slate-600">
+                  {subscription?.end_date
+                    ? new Date(subscription.end_date).toLocaleDateString("zh-CN")
+                    : "永久"}
+                </span>
+              </div>
+              <div className="text-xs text-slate-500">到期时间</div>
+            </div>
+          </div>
+
+          {/* 活跃状态提示 */}
+          {subscription && !subscription.is_active && (
+            <div className="mt-3 rounded-lg bg-red-50 p-3 text-center text-sm text-red-600">
+              配额已用完或已过期，请续费以继续使用
+            </div>
+          )}
+          {subscription?.plan_type === "free_trial" && subscription.is_active && (
+            <div className="mt-3 rounded-lg bg-amber-50 p-3 text-center text-sm text-amber-700">
+              免费试用仅含 1 篇带水印文档，升级后解锁无水印导出
+            </div>
           )}
         </CardContent>
       </Card>
 
-      {/* 套餐对比 */}
+      {/* 套餐选择 */}
       <Card>
         <CardHeader>
-          <CardTitle>套餐升级</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5" />
+            选择套餐
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
-            {/* 基础版 */}
-            <div className="rounded-lg border-2 border-blue-200 p-4">
-              <div className="mb-2 text-lg font-bold text-blue-700">基础版</div>
-              <div className="mb-4 text-2xl font-bold">
-                ¥99<span className="text-sm text-slate-400">/月</span>
+            {PRICING.map((pkg) => (
+              <div
+                key={pkg.type}
+                className={`rounded-lg border-2 p-5 ${pkg.color}`}
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-lg font-bold">{pkg.label}</span>
+                  {pkg.recommended && (
+                    <Badge className="bg-purple-100 text-purple-700">推荐</Badge>
+                  )}
+                </div>
+                <div className="mb-4">
+                  <span className="text-3xl font-bold">{pkg.price}</span>
+                  <span className="text-sm text-slate-400">{pkg.unit}</span>
+                </div>
+                <ul className="mb-4 space-y-2 text-sm text-slate-600">
+                  {pkg.features.map((f, i) => (
+                    <li key={i} className="flex items-center gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  className="w-full"
+                  variant={pkg.recommended ? "default" : "outline"}
+                  disabled={ordering === pkg.type}
+                  onClick={() => handleOrder(pkg.type)}
+                >
+                  {ordering === pkg.type ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  {ordering === pkg.type ? "创建订单中..." : `购买${pkg.label}`}
+                </Button>
               </div>
-              <ul className="space-y-2 text-sm text-slate-600">
-                <li>20 个投标项目</li>
-                <li>50 次文档导出</li>
-                <li>500 次 AI 调用</li>
-                <li>无水印导出</li>
-              </ul>
-              <Button className="mt-4 w-full" variant="outline">
-                升级基础版
-              </Button>
-            </div>
-
-            {/* 专业版 */}
-            <div className="rounded-lg border-2 border-purple-300 bg-purple-50/30 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-lg font-bold text-purple-700">专业版</span>
-                <Badge className="bg-purple-100 text-purple-700">推荐</Badge>
-              </div>
-              <div className="mb-4 text-2xl font-bold">
-                ¥299<span className="text-sm text-slate-400">/月</span>
-              </div>
-              <ul className="space-y-2 text-sm text-slate-600">
-                <li>不限投标项目</li>
-                <li>不限文档导出</li>
-                <li>2000 次 AI 调用</li>
-                <li>优先使用 DeepSeek Pro</li>
-                <li>风险报告 + 合规检查</li>
-              </ul>
-              <Button className="mt-4 w-full">
-                升级专业版
-              </Button>
-            </div>
-
-            {/* 企业版 */}
-            <div className="rounded-lg border-2 border-amber-200 p-4">
-              <div className="mb-2 text-lg font-bold text-amber-700">企业版</div>
-              <div className="mb-4 text-2xl font-bold">
-                联系销售
-              </div>
-              <ul className="space-y-2 text-sm text-slate-600">
-                <li>一切专业版功能</li>
-                <li>私有化部署</li>
-                <li>API 对接</li>
-                <li>专属客户经理</li>
-                <li>SLA 保障</li>
-              </ul>
-              <Button className="mt-4 w-full" variant="outline">
-                联系我们
-              </Button>
-            </div>
+            ))}
           </div>
         </CardContent>
       </Card>

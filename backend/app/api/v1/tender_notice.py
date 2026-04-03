@@ -230,13 +230,16 @@ async def fetch_and_analyze(
     # 2. 逐条分析
     analyzed = []
     for n in notices:
+        notice_id = getattr(n, "id", n)  # 兼容对象和字符串/整数 ID
         try:
-            result = await agg.analyze_notice(n.id, tenant_id, body.enterprise_id)
+            result = await agg.analyze_notice(notice_id, tenant_id, body.enterprise_id)
             analyzed.append(TenderNoticeListOut.model_validate(result))
         except Exception as e:
             import traceback
-            logger.error(f"fetch_and_analyze 调用 analyze_notice({n.id}) 发生完全异常退出的错误: {type(e).__name__}: {e}\n{traceback.format_exc()}")
-            analyzed.append(TenderNoticeListOut.model_validate(n))
+            logger.error(f"fetch_and_analyze 调用 analyze_notice({notice_id}) 异常: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+            if hasattr(n, "__dict__"):
+                analyzed.append(TenderNoticeListOut.model_validate(n))
+            # 非对象类型跳过，避免二次报错
 
     return ApiResponse(data={
         "fetched": len(notices),
