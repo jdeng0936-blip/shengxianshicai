@@ -22,6 +22,7 @@ import Link from "next/link";
 import api from "@/lib/api";
 import ChapterFeedback from "@/components/business/chapter-feedback";
 import AIPipelineProgress from "@/components/business/ai-pipeline-progress";
+import CoverageHeatmap, { type CoverageReport } from "@/components/business/coverage-heatmap";
 import { useGenerationSocket } from "@/hooks/useGenerationSocket";
 
 interface BidChapter {
@@ -77,6 +78,25 @@ export default function ChaptersEditorPage() {
   // WebSocket 实时管线进度
   const { state: pipelineState, connect: wsConnect, disconnect: wsDisconnect } =
     useGenerationSocket(projectId);
+
+  // 覆盖率报告
+  const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [showCoverage, setShowCoverage] = useState(false);
+
+  const handleCheckCoverage = async () => {
+    setCoverageLoading(true);
+    setShowCoverage(true);
+    try {
+      const res = await api.get(`/bid-projects/${projectId}/coverage-report`);
+      setCoverageReport(res.data?.data || null);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "覆盖率检查失败");
+      setCoverageReport(null);
+    } finally {
+      setCoverageLoading(false);
+    }
+  };
 
   const fetchChapters = useCallback(async () => {
     try {
@@ -408,6 +428,18 @@ export default function ChaptersEditorPage() {
                   : "一键生成全部"}
               </Button>
               <Button
+                onClick={handleCheckCoverage}
+                disabled={coverageLoading || generatingAll}
+                variant="outline"
+              >
+                {coverageLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                )}
+                {coverageLoading ? "检查中..." : "覆盖率检查"}
+              </Button>
+              <Button
                 onClick={handleExport}
                 disabled={exporting || generatingAll}
                 variant="outline"
@@ -453,6 +485,32 @@ export default function ChaptersEditorPage() {
 
       {/* AI 七层管线实时进度面板 */}
       {generatingAll && <AIPipelineProgress state={pipelineState} />}
+
+      {/* 评分覆盖率热力图 */}
+      {showCoverage && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-slate-700">评分覆盖率检查</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowCoverage(false)}
+              className="text-xs text-slate-400"
+            >
+              收起
+            </Button>
+          </div>
+          {coverageLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+            </div>
+          ) : coverageReport ? (
+            <CoverageHeatmap report={coverageReport} />
+          ) : (
+            <p className="py-4 text-center text-sm text-slate-400">暂无数据</p>
+          )}
+        </div>
+      )}
 
       {chapters.length > 0 && (
         <div className="flex gap-4" style={{ height: "calc(100vh - 220px)" }}>

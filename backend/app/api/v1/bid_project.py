@@ -932,3 +932,89 @@ async def generate_risk_report(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"风险报告生成失败: {str(e)}")
+
+
+# ========== 评分覆盖率报告 ==========
+
+@router.get("/{project_id}/coverage-report", response_model=ApiResponse)
+async def get_coverage_report(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """获取评分点覆盖率报告 — 热力图数据
+
+    返回各评分项对各章节的覆盖度矩阵，未覆盖项附带补充建议。
+    """
+    from app.services.bid_project_service import BidProjectService
+    from app.services.generation.polish_pipeline import PolishResult
+    from app.services.generation.reviewer import review_scoring_coverage
+
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    if not project.chapters:
+        raise HTTPException(status_code=400, detail="项目尚无章节，请先初始化")
+
+    # 转换 BidChapter → PolishResult（reviewer 输入格式）
+    chapters = [
+        PolishResult(
+            chapter_no=ch.chapter_no,
+            title=ch.title,
+            content=ch.content or "",
+            changes_summary="",
+            rounds_applied=0,
+        )
+        for ch in project.chapters
+        if ch.content  # 跳过空章节
+    ]
+
+    if not chapters:
+        raise HTTPException(status_code=400, detail="所有章节内容为空，请先生成")
+
+    # 收集评分类需求
+    scoring_reqs = [
+        {
+            "id": r.id,
+            "content": r.content,
+            "max_score": r.max_score,
+        }
+        for r in (project.requirements or [])
+        if r.category == "scoring"
+    ]
+
+    # 运行覆盖率校验（关键词模式，快速响应）
+    report = await review_scoring_coverage(chapters, scoring_reqs, threshold=0.6)
+
+    # 构建热力图矩阵数据
+    chapter_list = [{"chapter_no": ch.chapter_no, "title": ch.title} for ch in chapters]
+
+    items = []
+    for item in report.scoring_items:
+        entry = {
+            "requirement_id": item.requirement_id,
+            "requirement_text": item.requirement_text,
+            "max_score": item.max_score,
+            "coverage_score": item.coverage_score,
+            "covered_in": item.covered_in,
+            "gap_note": item.gap_note,
+            "remediation": None,
+        }
+        if item.remediation:
+            entry["remediation"] = {
+                "target_chapter": item.remediation.target_chapter,
+                "target_title": item.remediation.target_title,
+                "action": item.remediation.action,
+                "priority": item.remediation.priority,
+            }
+        items.append(entry)
+
+    return ApiResponse(data={
+        "overall_coverage": report.overall_coverage,
+        "total_items": len(report.scoring_items),
+        "uncovered_count": len(report.uncovered_items),
+        "chapters": chapter_list,
+        "items": items,
+    })
