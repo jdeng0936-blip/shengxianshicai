@@ -1003,6 +1003,50 @@ async def check_similarity(
         raise HTTPException(status_code=500, detail=f"相似度检测失败: {str(e)}")
 
 
+# ========== 文本差��化 ==========
+
+class DiversifyRequest(BaseModel):
+    intensity: str = "medium"  # light / medium / heavy
+
+@router.post("/{project_id}/chapters/{chapter_id}/diversify", response_model=ApiResponse)
+async def diversify_chapter(
+    project_id: int,
+    chapter_id: int,
+    body: DiversifyRequest,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """章节文本差���化 — 降低与历史标书的相似度
+
+    三档强度: light(同义替换) / medium(+句式重组) / heavy(+段落重组)
+    """
+    from app.services.bid_project_service import BidProjectService
+    from app.services.text_diversifier import diversify
+
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    chapter = next((ch for ch in project.chapters if ch.id == chapter_id), None)
+    if not chapter or not chapter.content:
+        raise HTTPException(status_code=404, detail="章节不存在或内容为空")
+
+    try:
+        result = await diversify(chapter.content, body.intensity)
+        return ApiResponse(data={
+            "original": result.original_text[:500],
+            "diversified": result.diversified_text,
+            "l1_count": result.l1_count,
+            "l2_applied": result.l2_applied,
+            "ngram_reduction": result.ngram_reduction,
+            "intensity": body.intensity,
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"差异化处理失败: {str(e)}")
+
+
 # ========== 评分覆盖率报告 ==========
 
 @router.get("/{project_id}/coverage-report", response_model=ApiResponse)
