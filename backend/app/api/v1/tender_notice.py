@@ -1,7 +1,10 @@
 """
 商机漏斗 API 路由 — TenderNotice CRUD + 抓取分析 + 转化投标项目
 """
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
