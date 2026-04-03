@@ -25,6 +25,7 @@ import AIPipelineProgress from "@/components/business/ai-pipeline-progress";
 import CoverageHeatmap, { type CoverageReport } from "@/components/business/coverage-heatmap";
 import { useGenerationSocket } from "@/hooks/useGenerationSocket";
 import AIDetectionPanel, { type DetectionResult } from "@/components/business/ai-detection-panel";
+import PostExportChecklist from "@/components/business/post-export-checklist";
 import { toast } from "sonner";
 
 interface BidChapter {
@@ -85,6 +86,9 @@ export default function ChaptersEditorPage() {
   const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [showCoverage, setShowCoverage] = useState(false);
+
+  // 导出后检查清单
+  const [showPostExportChecklist, setShowPostExportChecklist] = useState(false);
 
   // AI 检测
   const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
@@ -366,6 +370,8 @@ export default function ChaptersEditorPage() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+      // 导出成功后弹出投标交付检查清单
+      setShowPostExportChecklist(true);
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "导出失败");
     } finally {
@@ -736,6 +742,13 @@ export default function ChaptersEditorPage() {
             )}
           </Card>
         </div>
+      )}
+      {/* 导出后投标交付检查清单弹窗 */}
+      {showPostExportChecklist && (
+        <PostExportChecklist
+          projectId={projectId}
+          onClose={() => setShowPostExportChecklist(false)}
+        />
       )}
     </div>
   );

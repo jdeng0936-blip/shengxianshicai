@@ -1107,3 +1107,104 @@ async def detect_ai_all_chapters(
         "project_risk_level": "high" if avg_score >= 60 else "medium" if avg_score >= 35 else "low",
         "chapters": results,
     })
+
+
+# ========== 投标准备检查清单 ==========
+
+@router.get("/{project_id}/bid-checklist", response_model=ApiResponse)
+async def get_bid_checklist(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """获取投标准备检查清单（保证金模板+盖章清单+打印提醒）"""
+    from app.services.bid_checklist_service import generate_bid_checklist
+    from app.services.bid_project_service import BidProjectService
+
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 收集招标要求文本
+    req_texts = [r.content for r in (project.requirements or [])]
+
+    checklist = generate_bid_checklist(
+        project_name=project.project_name,
+        project_no=getattr(project, "project_no", None),
+        lot_no=getattr(project, "lot_no", None),
+        tender_requirements=req_texts or None,
+    )
+
+    return ApiResponse(data={
+        "deposit_memo": {
+            "amount": checklist.deposit_memo.amount,
+            "memo_text": checklist.deposit_memo.memo_text,
+        } if checklist.deposit_memo else None,
+        "stamp_items": [
+            {
+                "document_name": s.document_name,
+                "stamp_type": s.stamp_type,
+                "source": s.source,
+                "checked": False,
+            }
+            for s in checklist.stamp_items
+        ],
+        "print_reminders": [
+            {
+                "item": r.item,
+                "category": r.category,
+                "checked": False,
+            }
+            for r in checklist.print_reminders
+        ],
+        "total_items": checklist.total_items,
+    })
+
+
+# ========== 资质到期预警 ==========
+
+@router.get("/{project_id}/credential-alerts", response_model=ApiResponse)
+async def get_credential_alerts(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """获取项目关联企业的资质到期预警报告"""
+    from app.services.credential_alert_service import CredentialAlertService
+    from app.services.bid_project_service import BidProjectService
+
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    if not project.enterprise_id:
+        raise HTTPException(status_code=400, detail="项目未关联企业")
+
+    alert_svc = CredentialAlertService(session)
+    report = await alert_svc.scan_enterprise(
+        enterprise_id=project.enterprise_id,
+        tenant_id=tenant_id,
+    )
+
+    return ApiResponse(data={
+        "enterprise_id": report.enterprise_id,
+        "total_credentials": report.total_credentials,
+        "expired_count": report.expired_count,
+        "warning_count": report.warning_count,
+        "can_bid": report.can_bid,
+        "alerts": [
+            {
+                "credential_id": a.credential_id,
+                "cred_name": a.cred_name,
+                "cred_type": a.cred_type,
+                "cred_no": a.cred_no,
+                "expiry_date": a.expiry_date,
+                "days_remaining": a.days_remaining,
+                "level": a.level,
+                "message": a.message,
+            }
+            for a in report.alerts
+        ],
+    })
