@@ -25,6 +25,7 @@ logger = logging.getLogger("freshbid")
 logging.getLogger("pdfminer").setLevel(logging.WARNING)
 
 from app.core.database import engine, async_session_factory
+from app.core.redis import init_redis, close_redis
 from app.models.base import Base
 
 # 导入所有模型，确保 SQLAlchemy 注册全部表
@@ -118,9 +119,11 @@ async def lifespan(app: FastAPI):
     # --- 启动时 ---
     print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} 启动中...")
     await _init_db()
+    await init_redis()
     yield
     # --- 关闭时 ---
     print("🛑 应用关闭，释放资源...")
+    await close_redis()
 
 
 app = FastAPI(

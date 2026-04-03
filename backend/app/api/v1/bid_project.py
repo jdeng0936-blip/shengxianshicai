@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session, async_session_factory
 from app.core.deps import get_current_user_payload, get_tenant_id
+from app.core.redis import get_redis
+from app.core.task_store import ParseTaskStore, FullParseGuard
 from app.schemas.common import ApiResponse
 from app.schemas.bid_project import (
     BidProjectCreate, BidProjectUpdate, BidProjectOut, BidProjectListOut,
@@ -32,20 +34,38 @@ logger = logging.getLogger("freshbid")
 
 router = APIRouter(prefix="/bid-projects", tags=["投标项目"])
 
-# ---------- 异步预览解析任务内存池 ----------
-# 结构: {task_id: {"status": "pending"|"done"|"error", "data": {...}, "error": "..."}}
-_parse_tasks: dict[str, dict] = {}
+# ---------- Redis 任务存储辅助 ----------
+
+def _task_store() -> ParseTaskStore:
+    return ParseTaskStore(get_redis())
 
 
 async def _run_full_parse(project_id: int, tenant_id: int, user_id: int = 0):
-    """后台协程：对已关联招标文件的项目执行完整结构化解析（独立 session）"""
+    """后台协程：对已关联招标文件的项目执行完整结构化解析（独立 session）
+
+    加固点：
+    - Redis 分布式锁防重入（同一项目不会被并发解析）
+    - TTL 自动释放（进程崩溃不会死锁）
+    - 解析状态写入 Redis 供查询
+    """
     await asyncio.sleep(0)
-    async with async_session_factory() as session:
-        try:
+
+    guard = FullParseGuard(get_redis(), project_id)
+
+    # 获取锁，失败说明已有解析在跑
+    if not await guard.acquire():
+        logger.warning(f"跳过重复解析: project_id={project_id} 已在解析中")
+        return
+
+    try:
+        await guard.set_state("parsing")
+
+        async with async_session_factory() as session:
             svc = BidProjectService(session)
             project = await svc.get_project(project_id, tenant_id)
             if not project or not project.tender_doc_path:
                 logger.warning(f"自动解析跳过: project_id={project_id} 无招标文件")
+                await guard.set_state("skipped", "无招标文件")
                 return
 
             project.status = "parsing"
@@ -64,42 +84,39 @@ async def _run_full_parse(project_id: int, tenant_id: int, user_id: int = 0):
                           "technical_requirements", "scoring_criteria",
                           "commercial_requirements"]
             )
+            await guard.set_state("parsed", f"提取招标要求 {req_count} 条")
             logger.info(f"自动解析完成: project_id={project_id}, 提取招标要求 {req_count} 条")
-        except Exception as e:
-            # 解析失败不抛异常，仅更新状态和记录日志
-            try:
+    except Exception as e:
+        # 解析失败不抛异常，仅更新状态和记录日志
+        await guard.set_state("failed", str(e))
+        try:
+            async with async_session_factory() as session:
+                svc = BidProjectService(session)
                 project = await svc.get_project(project_id, tenant_id)
                 if project:
                     project.status = "failed"
                     await session.commit()
-            except Exception:
-                pass
-            logger.error(f"自动解析失败: project_id={project_id}: {e}")
+        except Exception:
+            pass
+        logger.error(f"自动解析失败: project_id={project_id}: {e}")
+    finally:
+        await guard.release()
 
 
 async def _run_preview_parse(task_id: str, temp_path: str, filename: str):
-    """后台协程：执行招标文件预览解析并将结果写入 _parse_tasks"""
-    # 关键：yield 一次让事件循环先把 POST 响应发出去
-    # 否则 preview_parse 内部的同步 PDF 提取会阻塞事件循环，导致响应卡住
+    """后台协程：执行招标文件预览解析并将结果写入 Redis"""
     await asyncio.sleep(0)
+    store = _task_store()
     try:
         result = await TenderParseService.preview_parse(temp_path, filename)
-        _parse_tasks[task_id] = {
-            "status": "done",
-            "data": {
-                **result,
-                "temp_file_path": temp_path,
-                "filename": filename,
-            },
-            "error": None,
-        }
+        await store.set_done(task_id, {
+            **result,
+            "temp_file_path": temp_path,
+            "filename": filename,
+        })
         logger.info(f"预览解析任务完成 task_id={task_id}")
     except Exception as e:
-        _parse_tasks[task_id] = {
-            "status": "error",
-            "data": None,
-            "error": str(e),
-        }
+        await store.set_error(task_id, str(e))
         logger.error(f"预览解析任务失败 task_id={task_id}: {e}")
 
 
@@ -222,9 +239,9 @@ async def preview_tender(
         # 保存到临时目录（毫秒级）
         temp_path, filename = await TenderParseService.save_temp_file(file)
 
-        # 生成任务 ID 并注册
+        # 生成任务 ID 并注册到 Redis
         task_id = _uuid.uuid4().hex
-        _parse_tasks[task_id] = {"status": "pending", "data": None, "error": None}
+        await _task_store().create(task_id)
 
         # 后台启动异步解析（不阻塞当前请求）
         asyncio.create_task(_run_preview_parse(task_id, temp_path, filename))
@@ -249,7 +266,7 @@ async def preview_tender_status(
     查询招标文件预览解析任务状态。
     返回 status: pending（进行中）/ done（完成）/ error（失败）。
     """
-    task = _parse_tasks.get(task_id)
+    task = await _task_store().get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="解析任务不存在或已过期")
 

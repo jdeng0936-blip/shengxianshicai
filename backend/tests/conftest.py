@@ -6,6 +6,7 @@ pytest 测试基础设施 — conftest.py
   - 通过 dependency_overrides 替换 app 的 get_async_session
   - 避免 asyncpg 连接池跨事件循环复用导致的 InterfaceError
   - 延迟导入 app，避免 collect 阶段触发 Settings 校验失败
+  - 使用 fakeredis 替代真实 Redis，保持测试隔离
 """
 import pytest
 import pytest_asyncio
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+import fakeredis
 
 
 def _load_app():
@@ -60,11 +62,19 @@ async def async_client():
 
     app.dependency_overrides[get_async_session] = override_get_session
 
+    # 用 fakeredis 替换真实 Redis，保持测试隔离
+    import app.core.redis as _redis_mod
+    fake_redis = fakeredis.FakeAsyncRedis(decode_responses=True, version=(7,))
+    _redis_mod._client = fake_redis
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
+    # 清理
     app.dependency_overrides.pop(get_async_session, None)
+    await fake_redis.aclose()
+    _redis_mod._client = None
     await test_engine.dispose()
 
 
