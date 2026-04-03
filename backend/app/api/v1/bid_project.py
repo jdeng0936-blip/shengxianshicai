@@ -1018,3 +1018,92 @@ async def get_coverage_report(
         "chapters": chapter_list,
         "items": items,
     })
+
+
+# ========== 反 AI 检测 ==========
+
+@router.get("/{project_id}/ai-detection/{chapter_id}", response_model=ApiResponse)
+async def detect_ai_chapter(
+    project_id: int,
+    chapter_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """检测单个章节的 AI 生成痕迹
+
+    返回综合风险分（0~100）、五维度明细和修改建议。
+    """
+    from app.services.ai_detection_service import detect_ai_text
+
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    chapter = next((ch for ch in project.chapters if ch.id == chapter_id), None)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="章节不存在")
+
+    if not chapter.content:
+        raise HTTPException(status_code=400, detail="章节内容为空")
+
+    report = detect_ai_text(chapter.content)
+
+    return ApiResponse(data={
+        "chapter_no": chapter.chapter_no,
+        "title": chapter.title,
+        "overall_score": report.overall_score,
+        "risk_level": report.risk_level,
+        "summary": report.summary,
+        "dimensions": [
+            {
+                "name": d.name,
+                "score": d.score,
+                "detail": d.detail,
+                "suggestion": d.suggestion,
+            }
+            for d in report.dimensions
+        ],
+    })
+
+
+@router.get("/{project_id}/ai-detection", response_model=ApiResponse)
+async def detect_ai_all_chapters(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """批量检测所有章节的 AI 生成痕迹"""
+    from app.services.ai_detection_service import detect_ai_text
+
+    svc = BidProjectService(session)
+    project = await svc.get_project(project_id, tenant_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    results = []
+    total_score = 0.0
+    count = 0
+
+    for ch in project.chapters:
+        if not ch.content:
+            continue
+        report = detect_ai_text(ch.content)
+        results.append({
+            "chapter_id": ch.id,
+            "chapter_no": ch.chapter_no,
+            "title": ch.title,
+            "overall_score": report.overall_score,
+            "risk_level": report.risk_level,
+            "summary": report.summary,
+        })
+        total_score += report.overall_score
+        count += 1
+
+    avg_score = round(total_score / count, 1) if count > 0 else 0
+
+    return ApiResponse(data={
+        "project_avg_score": avg_score,
+        "project_risk_level": "high" if avg_score >= 60 else "medium" if avg_score >= 35 else "low",
+        "chapters": results,
+    })
