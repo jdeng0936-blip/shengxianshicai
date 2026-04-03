@@ -260,6 +260,150 @@ def _check_cross_chapter_consistency(
 
 # ── L2+: 195号文增强 — 资质引用完整性 ────────────────────
 
+# ── L2+: 195号文增强 — 项目上下文一致性 ──────────────────
+
+# 客户类型关键词映射
+_CUSTOMER_TYPE_KEYWORDS = {
+    "学校": ["学校", "学生", "校园", "食堂", "师生", "教职工", "学期"],
+    "医院": ["医院", "患者", "病房", "医疗", "住院", "营养科", "膳食"],
+    "政府": ["政府", "机关", "公务", "行政", "办公楼"],
+    "企业": ["企业", "员工", "职工", "工厂", "园区", "写字楼"],
+    "养老": ["养老", "老人", "护理", "敬老院", "康养"],
+    "部队": ["部队", "官兵", "军营", "营区"],
+}
+
+
+def _check_project_context_consistency(
+    drafts: list[DraftChapter],
+    project_context: Optional[dict] = None,
+) -> list[ComplianceIssue]:
+    """项目上下文一致性检查（防复制旧标书未更新）
+
+    检测投标文件中引用的项目名称、采购方、服务对象等关键信息
+    是否与当前投标项目匹配。
+
+    Args:
+        drafts: 章节列表
+        project_context: 当前项目元数据，包含:
+            - project_name: 项目名称
+            - tender_org: 采购方名称
+            - customer_type: 客户类型（学校/医院/政府/企业）
+            - delivery_scope: 配送范围
+    """
+    issues = []
+    if not project_context:
+        return issues
+
+    project_name = project_context.get("project_name", "")
+    tender_org = project_context.get("tender_org", "")
+    customer_type = project_context.get("customer_type", "")
+    all_content = " ".join(d.content or "" for d in drafts)
+
+    # 1. 客户类型冲突检测
+    if customer_type:
+        current_keywords = _CUSTOMER_TYPE_KEYWORDS.get(customer_type, [])
+        for other_type, other_keywords in _CUSTOMER_TYPE_KEYWORDS.items():
+            if other_type == customer_type:
+                continue
+            for kw in other_keywords:
+                if kw in all_content:
+                    # 排除：当前类型关键词也在同一句中（可能是对比描述）
+                    # 仅当其他类型关键词出现且当前类型关键词缺失时才告警
+                    has_current_nearby = any(ck in all_content for ck in current_keywords[:3])
+                    if not has_current_nearby or all_content.count(kw) >= 3:
+                        # 找到出现在哪个章节
+                        for d in drafts:
+                            if kw in (d.content or ""):
+                                issues.append(ComplianceIssue(
+                                    level=ComplianceLevel.L2_SEMANTIC,
+                                    chapter_no=d.chapter_no,
+                                    description=f"客户类型疑似错配: 当前项目为「{customer_type}」类，但 {d.chapter_no} 出现「{kw}」（{other_type}类关键词）",
+                                    suggestion=f"请检查是否从{other_type}类项目复制了内容，需将「{kw}」相关描述替换为{customer_type}类场景",
+                                ))
+                                break  # 同一关键词只报一次
+                        break  # 同一类型只报最显著的一个
+
+    # 2. 采购方名称不匹配检测
+    if tender_org and len(tender_org) >= 4:
+        # 提取文中所有疑似机构名（XX学校/XX医院/XX公司 等）
+        org_pattern = re.compile(
+            r'[\u4e00-\u9fff]{2,15}(?:学校|小学|中学|大学|医院|公司|局|中心|单位|部门|政府|街道|社区|集团)'
+        )
+        found_orgs = set(org_pattern.findall(all_content))
+        # 过滤掉当前采购方名称及其子串
+        foreign_orgs = [
+            org for org in found_orgs
+            if org not in tender_org and tender_org not in org
+            and len(org) >= 4
+        ]
+        # 检查是否有非当前采购方的具体机构名（出现 2 次以上更可疑）
+        for org in foreign_orgs:
+            count = all_content.count(org)
+            if count >= 2:
+                for d in drafts:
+                    if org in (d.content or ""):
+                        issues.append(ComplianceIssue(
+                            level=ComplianceLevel.L3_DISQUALIFY,
+                            chapter_no=d.chapter_no,
+                            description=f"疑似残留其他项目采购方名称: 「{org}」出现 {count} 次（当前采购方为「{tender_org}」）",
+                            suggestion=f"请立即检查并将「{org}」替换为当前采购方「{tender_org}」或删除相关内容，此问题可能导致废标",
+                            is_blocking=True,
+                        ))
+                        break
+
+    # 3. 项目名称残留检测（按标点分句后提取，避免跨句捕获）
+    if project_name and len(project_name) >= 6:
+        proj_suffixes = ["项目", "采购", "招标", "磋商"]
+        foreign_refs: dict[str, int] = {}
+
+        clauses = re.split(r'[，。！？；：\n、（）]', all_content)
+        for clause in clauses:
+            for suffix in proj_suffixes:
+                if suffix not in clause:
+                    continue
+                idx = clause.index(suffix)
+                before = clause[:idx]
+                parts = re.findall(r'[\u4e00-\u9fff]+', before)
+                if not parts:
+                    continue
+                # 取紧邻后缀的最后一段中文作为项目名核心
+                core = parts[-1]
+                candidate = core + suffix
+                if (len(candidate) >= 6
+                        and candidate not in project_name
+                        and project_name not in candidate):
+                    foreign_refs[candidate] = foreign_refs.get(candidate, 0) + 1
+
+        # 合并相似候选（取最短的作为代表，避免不同前缀导致分裂）
+        merged: dict[str, int] = {}
+        sorted_refs = sorted(foreign_refs.keys(), key=len)
+        for candidate in sorted_refs:
+            # 检查是否是某个已有候选的超集
+            found_parent = False
+            for existing in list(merged.keys()):
+                if existing in candidate:
+                    merged[existing] += foreign_refs[candidate]
+                    found_parent = True
+                    break
+            if not found_parent:
+                merged[candidate] = foreign_refs[candidate]
+
+        for proj, count in merged.items():
+            if count >= 1 and 6 <= len(proj) <= 25:
+                for d in drafts:
+                    if proj in (d.content or ""):
+                        issues.append(ComplianceIssue(
+                            level=ComplianceLevel.L3_DISQUALIFY,
+                            chapter_no=d.chapter_no,
+                            description=f"疑似残留其他项目名称: 「{proj}」出现 {count} 次",
+                            suggestion=f"请检查是否应替换为当前项目「{project_name}」",
+                            is_blocking=True,
+                        ))
+                        break
+
+    return issues
+
+
 _CRED_CHAPTER_MAP = {
     "haccp": {"keywords": ["HACCP", "危害分析", "关键控制点"], "expected_in": ["质量", "安全", "管理"]},
     "iso22000": {"keywords": ["ISO 22000", "ISO22000", "食品安全管理体系"], "expected_in": ["质量", "安全", "管理"]},
@@ -316,6 +460,7 @@ async def check_compliance(
     drafts: list[DraftChapter],
     requirements: list[dict],
     enterprise_cred_types: Optional[set[str]] = None,
+    project_context: Optional[dict] = None,
 ) -> ComplianceReport:
     """
     合规门禁节点
@@ -342,6 +487,9 @@ async def check_compliance(
     # L2: 逐章语义审查
     for draft in drafts:
         all_issues.extend(_check_l2_semantic(draft, requirements))
+
+    # L2+: 项目上下文一致性（防复制旧标书未更新）
+    all_issues.extend(_check_project_context_consistency(drafts, project_context))
 
     # L2+: 195号文增强 — 跨章节一致性
     all_issues.extend(_check_cross_chapter_consistency(drafts))

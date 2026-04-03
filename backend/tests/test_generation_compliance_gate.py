@@ -12,6 +12,7 @@ from app.services.generation.compliance_gate import (
     _check_l3_disqualify,
     _check_cross_chapter_consistency,
     _check_credential_chapter_match,
+    _check_project_context_consistency,
 )
 from app.services.generation.writer import DraftChapter
 
@@ -337,3 +338,84 @@ class TestCredentialChapterMatch:
         # 应检测到冷链车辆矛盾
         contradiction = [i for i in report.issues if "数据矛盾" in i.description]
         assert len(contradiction) >= 1
+
+
+# ═══════════════════════════════════════════════════════════
+# 195号文增强 — 项目上下文一致性（防复制旧标书）
+# ═══════════════════════════════════════════════════════════
+
+class TestProjectContextConsistency:
+
+    def test_no_context_clean(self):
+        """无 project_context → 跳过"""
+        drafts = [_draft()]
+        issues = _check_project_context_consistency(drafts, None)
+        assert len(issues) == 0
+
+    def test_matching_customer_type_clean(self):
+        """客户类型一致 → 无问题"""
+        drafts = [_draft("第三章", "食材采购",
+                         "为医院患者提供每日三餐营养膳食配送服务" * 10)]
+        ctx = {"customer_type": "医院", "tender_org": "", "project_name": ""}
+        issues = _check_project_context_consistency(drafts, ctx)
+        # 当前类型是医院，内容也是医院场景 → 不应报错
+        type_issues = [i for i in issues if "客户类型疑似错配" in i.description]
+        assert len(type_issues) == 0
+
+    def test_wrong_customer_type_flagged(self):
+        """复制了学校项目内容到医院项目 → 报警"""
+        drafts = [_draft("第三章", "食材采购",
+                         "为学校学生提供营养午餐配送，每日覆盖2000名学生的校园食堂用餐需求" * 3)]
+        ctx = {"customer_type": "医院", "tender_org": "", "project_name": ""}
+        issues = _check_project_context_consistency(drafts, ctx)
+        type_issues = [i for i in issues if "客户类型疑似错配" in i.description]
+        assert len(type_issues) >= 1
+        assert "学校" in type_issues[0].description or "学生" in type_issues[0].description
+
+    def test_foreign_org_name_blocking(self):
+        """出现其他项目采购方名称 → 致命级"""
+        drafts = [_draft("第五章", "配送方案",
+                         "根据阳光小学食堂的要求，我公司为阳光小学提供每日配送服务。" * 2)]
+        ctx = {"customer_type": "学校", "tender_org": "育才中学", "project_name": ""}
+        issues = _check_project_context_consistency(drafts, ctx)
+        org_issues = [i for i in issues if "残留其他项目采购方" in i.description]
+        assert len(org_issues) >= 1
+        assert org_issues[0].is_blocking
+        assert "阳光小学" in org_issues[0].description
+
+    def test_current_org_not_flagged(self):
+        """当前采购方名称正常出现 → 不报警"""
+        drafts = [_draft("第五章", "配送方案",
+                         "根据育才中学食堂的要求，我公司为育才中学提供每日配送服务。" * 2)]
+        ctx = {"customer_type": "学校", "tender_org": "育才中学", "project_name": ""}
+        issues = _check_project_context_consistency(drafts, ctx)
+        org_issues = [i for i in issues if "残留其他项目采购方" in i.description]
+        assert len(org_issues) == 0
+
+    def test_foreign_project_name_blocking(self):
+        """出现其他项目名称 → 致命级"""
+        drafts = [_draft("第三章", "食材采购",
+                         "本公司响应阳光小学食材配送项目的要求，全力做好阳光小学食材配送项目的服务工作。")]
+        ctx = {
+            "customer_type": "学校",
+            "tender_org": "育才中学",
+            "project_name": "育才中学2026年食材配送采购",
+        }
+        issues = _check_project_context_consistency(drafts, ctx)
+        proj_issues = [i for i in issues if "残留其他项目名称" in i.description]
+        assert len(proj_issues) >= 1
+        assert proj_issues[0].is_blocking
+
+    def test_integrated_in_check_compliance(self):
+        """项目上下文检查集成到主入口"""
+        import asyncio
+        drafts = [_draft("第五章", "配送方案",
+                         "根据阳光小学食堂的要求，我公司为阳光小学提供配送。" * 2 + _long_content(400))]
+        ctx = {"customer_type": "学校", "tender_org": "育才中学", "project_name": ""}
+        report = asyncio.get_event_loop().run_until_complete(
+            check_compliance(drafts, requirements=[], project_context=ctx)
+        )
+        # 应检测到采购方残留 → blocking → passed=False
+        assert report.passed is False
+        org_issues = [i for i in report.issues if "残留其他项目采购方" in i.description]
+        assert len(org_issues) >= 1
