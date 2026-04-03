@@ -40,6 +40,7 @@ interface BidChapter {
   ai_model_used?: string;
   has_warning: boolean;
   ai_ratio: number;
+  edit_ratio: number | null;
   source_tags: string;
 }
 
@@ -437,6 +438,13 @@ export default function ChaptersEditorPage() {
   const aiRatioPct = Math.round(projectAiRatio * 100);
   const aiRatioSafe = aiRatioPct <= 30;
 
+  // 计算项目整体用户编辑占比（仅统计有值的章节）
+  const editedChapters = chapters.filter((ch) => ch.edit_ratio != null);
+  const projectEditRatio = editedChapters.length > 0
+    ? editedChapters.reduce((sum, ch) => sum + (ch.edit_ratio || 0), 0) / editedChapters.length
+    : 0;
+  const editRatioPct = Math.round(projectEditRatio * 100);
+
   const selectedChapter = chapters.find((ch) => ch.id === selectedId);
 
   if (loading && chapters.length === 0) {
@@ -533,6 +541,29 @@ export default function ChaptersEditorPage() {
           </span>
           <span className="text-xs text-slate-500">
             {aiRatioSafe ? "反AI检测安全" : "建议人工润色降低AI占比"}
+          </span>
+        </div>
+      )}
+
+      {/* 用户编辑占比指示器 */}
+      {editedChapters.length > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <div className="text-sm font-medium text-blue-700">
+            ✏️ 用户编辑占比
+          </div>
+          <div className="flex-1">
+            <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+              <div
+                className="h-full rounded-full bg-blue-500 transition-all"
+                style={{ width: `${Math.min(editRatioPct, 100)}%` }}
+              />
+            </div>
+          </div>
+          <span className="text-sm font-bold text-blue-700">
+            {editRatioPct}%
+          </span>
+          <span className="text-xs text-slate-500">
+            {editedChapters.length}/{chapters.length} 章已编辑
           </span>
         </div>
       )}
@@ -638,6 +669,12 @@ export default function ChaptersEditorPage() {
                         {selectedChapter.ai_ratio > 0 && (
                           <span className={`font-medium ${selectedChapter.ai_ratio > 0.3 ? "text-amber-600" : "text-green-600"}`}>
                             AI {Math.round(selectedChapter.ai_ratio * 100)}%
+                          </span>
+                        )}
+                        {/* 本章用户编辑占比 */}
+                        {selectedChapter.edit_ratio != null && selectedChapter.edit_ratio > 0 && (
+                          <span className={`font-medium ${selectedChapter.edit_ratio > 0.5 ? "text-blue-700" : "text-blue-500"}`}>
+                            编辑 {Math.round(selectedChapter.edit_ratio * 100)}%
                           </span>
                         )}
                       </div>

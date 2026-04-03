@@ -831,23 +831,28 @@ async def rewrite_selection(
 - 保持 Markdown 格式（如有标题、列表等）"""
 
     try:
-        cfg = LLMSelector.get_client_config("bid_section_generate")
-        client = AsyncOpenAI(
-            api_key=cfg["api_key"],
-            base_url=cfg["base_url"] or None,
-        )
-        response = await client.chat.completions.create(
-            model=cfg["model"],
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
-            max_tokens=4096,
-        )
-        result_text = response.choices[0].message.content or ""
+        async def _do_enhance(cfg: dict) -> dict:
+            client = AsyncOpenAI(
+                api_key=cfg["api_key"],
+                base_url=cfg["base_url"] or None,
+            )
+            response = await client.chat.completions.create(
+                model=cfg["model"],
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=4096,
+            )
+            return {
+                "text": response.choices[0].message.content or "",
+                "model": cfg["model"],
+            }
+
+        result = await LLMSelector.call_with_fallback("bid_section_generate", _do_enhance)
         return ApiResponse(data={
             "original": body.text,
-            "rewritten": result_text,
+            "rewritten": result["text"],
             "action": body.action,
-            "model": cfg["model"],
+            "model": result["model"],
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 重写失败: {str(e)}")
@@ -892,23 +897,28 @@ async def rewrite_chapter_segment(
     )
 
     try:
-        cfg = LLMSelector.get_client_config("bid_section_generate")
-        client = AsyncOpenAI(
-            api_key=cfg["api_key"],
-            base_url=cfg["base_url"] or None,
-        )
-        response = await client.chat.completions.create(
-            model=cfg["model"],
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
-            max_tokens=4096,
-        )
-        result_text = response.choices[0].message.content or ""
+        async def _do_rewrite(cfg: dict) -> dict:
+            client = AsyncOpenAI(
+                api_key=cfg["api_key"],
+                base_url=cfg["base_url"] or None,
+            )
+            response = await client.chat.completions.create(
+                model=cfg["model"],
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=4096,
+            )
+            return {
+                "text": response.choices[0].message.content or "",
+                "model": cfg["model"],
+            }
+
+        result = await LLMSelector.call_with_fallback("bid_section_generate", _do_rewrite)
         return ApiResponse(data={
             "original": body.original_text,
-            "rewritten": result_text,
+            "rewritten": result["text"],
             "instruction": body.instruction,
-            "model": cfg["model"],
+            "model": result["model"],
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 重写失败: {str(e)}")

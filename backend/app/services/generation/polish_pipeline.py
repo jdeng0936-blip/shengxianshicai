@@ -115,25 +115,27 @@ _POLISH_SYSTEM = (
 
 
 async def _call_llm_polish(content: str, style_hint: str) -> str:
-    """调用 LLM 进行文风润色"""
-    cfg = LLMSelector.get_client_config("bid_section_generate")
-    client = AsyncOpenAI(
-        api_key=cfg["api_key"],
-        base_url=cfg["base_url"] or None,
-    )
-
+    """调用 LLM 进行文风润色（带自动容灾 fallback）"""
+    max_tokens = LLMSelector.get_max_tokens("bid_section_generate")
     user_prompt = f"{style_hint}\n\n== 待润色正文 ==\n{content}"
 
-    resp = await client.chat.completions.create(
-        model=cfg["model"],
-        temperature=0.2,  # 润色用较低温度，保持一致性
-        max_tokens=LLMSelector.get_max_tokens("bid_section_generate"),
-        messages=[
-            {"role": "system", "content": _POLISH_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
-    return resp.choices[0].message.content or content
+    async def _do_call(cfg: dict) -> str:
+        client = AsyncOpenAI(
+            api_key=cfg["api_key"],
+            base_url=cfg["base_url"] or None,
+        )
+        resp = await client.chat.completions.create(
+            model=cfg["model"],
+            temperature=0.2,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": _POLISH_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        return resp.choices[0].message.content or content
+
+    return await LLMSelector.call_with_fallback("bid_section_generate", _do_call)
 
 
 # ── 主入口 ────────────────────────────────────────────────

@@ -82,17 +82,21 @@ def _get_provider_config(provider: str) -> dict:
             "api_key": settings.OPENAI_API_KEY,
             "base_url": settings.OPENAI_BASE_URL,
         },
+        "claude": {
+            "api_key": settings.CLAUDE_API_KEY or settings.OPENAI_API_KEY,
+            "base_url": settings.CLAUDE_BASE_URL or settings.OPENAI_BASE_URL,
+        },
         "gemini": {
-            "api_key": settings.GEMINI_API_KEY,
-            "base_url": settings.GEMINI_BASE_URL,
+            "api_key": settings.GEMINI_API_KEY or settings.OPENAI_API_KEY,
+            "base_url": settings.GEMINI_BASE_URL or settings.OPENAI_BASE_URL,
         },
         "deepseek": {
             "api_key": settings.DEEPSEEK_API_KEY or settings.OPENAI_API_KEY,
-            "base_url": settings.DEEPSEEK_BASE_URL,
+            "base_url": settings.DEEPSEEK_BASE_URL or settings.OPENAI_BASE_URL,
         },
         "qwen": {
             "api_key": settings.QWEN_API_KEY or settings.OPENAI_API_KEY,
-            "base_url": settings.QWEN_BASE_URL,
+            "base_url": settings.QWEN_BASE_URL or settings.OPENAI_BASE_URL,
         },
     }
     return configs.get(provider, configs["openai"])

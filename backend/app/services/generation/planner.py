@@ -47,31 +47,31 @@ _PLANNER_SYSTEM = (
 
 
 async def _call_llm_for_key_points(outline_text: str) -> list[dict]:
-    """调用 LLM 提取各章节关键点"""
-    cfg = LLMSelector.get_client_config("bid_section_generate")
-    client = AsyncOpenAI(
-        api_key=cfg["api_key"],
-        base_url=cfg["base_url"] or None,
-    )
+    """调用 LLM 提取各章节关键点（带自动容灾 fallback）"""
     temperature = LLMSelector.get_temperature("bid_section_generate")
 
-    resp = await client.chat.completions.create(
-        model=cfg["model"],
-        temperature=temperature,
-        max_tokens=4096,
-        messages=[
-            {"role": "system", "content": _PLANNER_SYSTEM},
-            {"role": "user", "content": outline_text},
-        ],
-        response_format={"type": "json_object"},
-    )
+    async def _do_call(cfg: dict) -> list[dict]:
+        client = AsyncOpenAI(
+            api_key=cfg["api_key"],
+            base_url=cfg["base_url"] or None,
+        )
+        resp = await client.chat.completions.create(
+            model=cfg["model"],
+            temperature=temperature,
+            max_tokens=4096,
+            messages=[
+                {"role": "system", "content": _PLANNER_SYSTEM},
+                {"role": "user", "content": outline_text},
+            ],
+            response_format={"type": "json_object"},
+        )
+        raw = resp.choices[0].message.content or "[]"
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed.get("chapters", [])
+        return parsed
 
-    raw = resp.choices[0].message.content or "[]"
-    parsed = json.loads(raw)
-    # 兼容 {"chapters": [...]} 和直接 [...] 两种格式
-    if isinstance(parsed, dict):
-        return parsed.get("chapters", [])
-    return parsed
+    return await LLMSelector.call_with_fallback("bid_section_generate", _do_call)
 
 
 def _build_plans_from_templates(

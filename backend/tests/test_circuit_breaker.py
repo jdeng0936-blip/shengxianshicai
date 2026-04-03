@@ -123,12 +123,12 @@ class TestSelectorWithCircuitBreaker:
 
     def test_all_tripped_falls_back_to_first(self):
         """全部熔断时降级到第一个"""
-        for provider in ["openai", "gemini", "deepseek"]:
+        for provider in ["openai", "claude", "gemini", "deepseek"]:
             for i in range(FAILURE_THRESHOLD):
                 record_failure(provider, f"e{i}")
 
         cfg = LLMSelector.get_client_config("bid_section_generate")
-        # 全部熔断 → 降级第一个
+        # 全部熔断 → 降级第一个（bid_section_generate T1 首选 openai）
         assert cfg["provider"] == "openai"
 
     def test_healthy_provider_selected_first(self):

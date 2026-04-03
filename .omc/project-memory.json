@@ -113,27 +113,27 @@
   },
   "hotPaths": [
     {
-      "path": "backend/app/api/v1/bid_project.py",
-      "accessCount": 33,
-      "lastAccessed": 1775200468935,
+      "path": "backend/app/services/bid_generation_service.py",
+      "accessCount": 42,
+      "lastAccessed": 1775208959941,
       "type": "file"
     },
     {
-      "path": "backend/app/services/generation/reviewer.py",
-      "accessCount": 24,
-      "lastAccessed": 1775192040714,
+      "path": "backend/app/api/v1/bid_project.py",
+      "accessCount": 37,
+      "lastAccessed": 1775205623173,
       "type": "file"
     },
     {
       "path": "backend",
-      "accessCount": 24,
-      "lastAccessed": 1775199122921,
+      "accessCount": 33,
+      "lastAccessed": 1775206903411,
       "type": "directory"
     },
     {
-      "path": "backend/app/services/bid_generation_service.py",
-      "accessCount": 22,
-      "lastAccessed": 1775190350705,
+      "path": "backend/app/services/generation/reviewer.py",
+      "accessCount": 25,
+      "lastAccessed": 1775206176669,
       "type": "file"
     },
     {
@@ -144,8 +144,44 @@
     },
     {
       "path": "backend/app/services/generation/compliance_gate.py",
-      "accessCount": 17,
-      "lastAccessed": 1775199536232,
+      "accessCount": 20,
+      "lastAccessed": 1775208895854,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/bid_compliance_service.py",
+      "accessCount": 18,
+      "lastAccessed": 1775206870099,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/models/bid_project.py",
+      "accessCount": 14,
+      "lastAccessed": 1775208879955,
+      "type": "directory"
+    },
+    {
+      "path": "backend/tests/test_bid_compliance.py",
+      "accessCount": 13,
+      "lastAccessed": 1775208756042,
+      "type": "file"
+    },
+    {
+      "path": "backend/llm_registry.yaml",
+      "accessCount": 12,
+      "lastAccessed": 1775205898511,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services",
+      "accessCount": 12,
+      "lastAccessed": 1775206238273,
+      "type": "directory"
+    },
+    {
+      "path": "backend/app/services/generation/writer.py",
+      "accessCount": 11,
+      "lastAccessed": 1775206199077,
       "type": "file"
     },
     {
@@ -153,12 +189,6 @@
       "accessCount": 10,
       "lastAccessed": 1775192015009,
       "type": "file"
-    },
-    {
-      "path": "backend/app/models/bid_project.py",
-      "accessCount": 9,
-      "lastAccessed": 1775186553733,
-      "type": "directory"
     },
     {
       "path": "backend/tests/conftest.py",
@@ -173,9 +203,15 @@
       "type": "file"
     },
     {
-      "path": "backend/tests/test_bid_compliance.py",
+      "path": "backend/app/core/config.py",
       "accessCount": 8,
-      "lastAccessed": 1775116159803,
+      "lastAccessed": 1775204606247,
+      "type": "file"
+    },
+    {
+      "path": "backend/app/services/ai_router.py",
+      "accessCount": 8,
+      "lastAccessed": 1775205752594,
       "type": "file"
     },
     {
@@ -185,21 +221,27 @@
       "type": "file"
     },
     {
+      "path": "backend/app/services/tender_parser.py",
+      "accessCount": 7,
+      "lastAccessed": 1775205603692,
+      "type": "file"
+    },
+    {
       "path": "backend/app",
       "accessCount": 6,
       "lastAccessed": 1775190047560,
       "type": "directory"
     },
     {
-      "path": "backend/app/services/generation/writer.py",
+      "path": "backend/app/core/llm_selector.py",
       "accessCount": 6,
-      "lastAccessed": 1775190997320,
+      "lastAccessed": 1775204606813,
       "type": "file"
     },
     {
-      "path": "backend/app/core/config.py",
-      "accessCount": 5,
-      "lastAccessed": 1775189194689,
+      "path": "backend/app/services/generation/planner.py",
+      "accessCount": 6,
+      "lastAccessed": 1775205458458,
       "type": "file"
     },
     {
@@ -209,10 +251,10 @@
       "type": "file"
     },
     {
-      "path": "backend/app/services",
+      "path": "backend/app/services/generation/polish_pipeline.py",
       "accessCount": 5,
-      "lastAccessed": 1775190997255,
-      "type": "directory"
+      "lastAccessed": 1775205463852,
+      "type": "file"
     },
     {
       "path": "backend/tests/test_generation_retriever.py",
@@ -227,15 +269,9 @@
       "type": "file"
     },
     {
-      "path": "backend/app/services/generation/planner.py",
+      "path": "backend/app/services/feedback_service.py",
       "accessCount": 4,
-      "lastAccessed": 1775190037035,
-      "type": "file"
-    },
-    {
-      "path": "backend/app/core/llm_selector.py",
-      "accessCount": 4,
-      "lastAccessed": 1775202186940,
+      "lastAccessed": 1775208908101,
       "type": "file"
     },
     {
@@ -248,12 +284,6 @@
       "path": "backend/app/services/generation/retriever.py",
       "accessCount": 3,
       "lastAccessed": 1775117480004,
-      "type": "file"
-    },
-    {
-      "path": "backend/app/services/generation/polish_pipeline.py",
-      "accessCount": 3,
-      "lastAccessed": 1775119540711,
       "type": "file"
     },
     {
@@ -275,10 +305,10 @@
       "type": "file"
     },
     {
-      "path": "backend/app/services/bid_compliance_service.py",
+      "path": "backend/app/models",
       "accessCount": 3,
-      "lastAccessed": 1775196172198,
-      "type": "file"
+      "lastAccessed": 1775206224752,
+      "type": "directory"
     },
     {
       "path": "backend/app/services/retriever.py",
@@ -326,18 +356,6 @@
       "path": "backend/app/services/embedding_service.py",
       "accessCount": 2,
       "lastAccessed": 1775191004337,
-      "type": "file"
-    },
-    {
-      "path": "backend/app/models",
-      "accessCount": 2,
-      "lastAccessed": 1775200110242,
-      "type": "directory"
-    },
-    {
-      "path": "backend/llm_registry.yaml",
-      "accessCount": 2,
-      "lastAccessed": 1775202111528,
       "type": "file"
     },
     {
@@ -389,27 +407,9 @@
       "type": "file"
     },
     {
-      "path": "backend/app/services/ai_router.py",
-      "accessCount": 1,
-      "lastAccessed": 1775185065504,
-      "type": "file"
-    },
-    {
       "path": "backend/app/services/bid_project_service.py",
       "accessCount": 1,
       "lastAccessed": 1775186535174,
-      "type": "file"
-    },
-    {
-      "path": "backend/app/services/tender_parser.py",
-      "accessCount": 1,
-      "lastAccessed": 1775186537173,
-      "type": "file"
-    },
-    {
-      "path": "backend/app/services/feedback_service.py",
-      "accessCount": 1,
-      "lastAccessed": 1775186568198,
       "type": "file"
     }
   ],

@@ -163,20 +163,21 @@ class AIRouter:
     """AI 智能路由引擎"""
 
     def __init__(self, session: Optional[AsyncSession] = None, tenant_id: int = 0, industry_type: str = "fresh_food"):
-        # 通过 LLMSelector 获取 tool_calling 任务的客户端配置（多 Provider 路由）
+        # 通过 LLMSelector 获取 tool_calling 任务的客户端配置（多 Provider 路由 + 熔断跳过）
         from app.core.llm_selector import LLMSelector
 
-        cfg = LLMSelector.get_client_config("tool_calling")
-        self.model = cfg["model"]
         self.session = session
         self.tenant_id = tenant_id
         self.industry_type = industry_type
 
+    def _get_client(self) -> tuple[AsyncOpenAI, str]:
+        """动态获取健康的 LLM 客户端（每次调用时检查熔断状态）"""
+        from app.core.llm_selector import LLMSelector
+        cfg = LLMSelector.get_client_config("tool_calling")
         client_kwargs = {"api_key": cfg["api_key"]}
         if cfg["base_url"]:
             client_kwargs["base_url"] = cfg["base_url"]
-
-        self.client = AsyncOpenAI(**client_kwargs)
+        return AsyncOpenAI(**client_kwargs), cfg["model"]
 
     def _build_system_prompt(self) -> str:
         """构建 System Prompt — 基础角色 + 行业词库动态注入"""
@@ -427,10 +428,11 @@ class AIRouter:
             )
 
         t0 = time.time()
+        client, model = self._get_client()
 
         # 第一轮：LLM 决定是否调用工具
-        response = await self.client.chat.completions.create(
-            model=self.model,
+        response = await client.chat.completions.create(
+            model=model,
             messages=messages,
             tools=TOOLS,
             tool_choice="auto",
@@ -459,8 +461,8 @@ class AIRouter:
                 })
 
             # 第二轮：LLM 解读工具结果
-            response2 = await self.client.chat.completions.create(
-                model=self.model,
+            response2 = await client.chat.completions.create(
+                model=model,
                 messages=messages,
             )
             reply = response2.choices[0].message.content or ""
@@ -500,10 +502,12 @@ class AIRouter:
         full_reply = ""
 
         try:
+            client, model = self._get_client()
+
             # 第一轮：检测工具调用（非流式，带超时保护）
             response = await asyncio.wait_for(
-                self.client.chat.completions.create(
-                    model=self.model,
+                client.chat.completions.create(
+                    model=model,
                     messages=messages,
                     tools=TOOLS,
                     tool_choice="auto",
@@ -548,8 +552,8 @@ class AIRouter:
 
                 # 第二轮：流式输出 LLM 解读
                 stream = await asyncio.wait_for(
-                    self.client.chat.completions.create(
-                        model=self.model,
+                    client.chat.completions.create(
+                        model=model,
                         messages=messages,
                         stream=True,
                     ),
@@ -565,8 +569,8 @@ class AIRouter:
             else:
                 # 无工具调用 → 直接流式输出
                 stream = await asyncio.wait_for(
-                    self.client.chat.completions.create(
-                        model=self.model,
+                    client.chat.completions.create(
+                        model=model,
                         messages=messages,
                         stream=True,
                     ),

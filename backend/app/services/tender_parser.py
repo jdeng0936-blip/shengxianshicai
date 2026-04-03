@@ -260,12 +260,6 @@ class TenderParseService:
         # 只取前 8000 字符做快速预览解析
         preview_text = text[:CHUNK_MAX_CHARS]
 
-        cfg = LLMSelector.get_client_config("tender_parse")
-        client = AsyncOpenAI(
-            api_key=cfg["api_key"],
-            base_url=cfg["base_url"] or None,
-        )
-
         prompt = (
             "你是专业的招标文件分析师，请快速阅读以下招标文件内容，"
             "仅提取项目基本信息。\n\n"
@@ -284,15 +278,22 @@ class TenderParseService:
             "}\n\n"
             "注意：只输出 JSON，不要加任何解释。"
         )
+        _qp_temp = LLMSelector.get_temperature("tender_parse")
 
-        response = await client.chat.completions.create(
-            model=cfg["model"],
-            messages=[{"role": "user", "content": prompt}],
-            temperature=LLMSelector.get_temperature("tender_parse"),
-            max_tokens=1024,
-        )
+        async def _do_quick_parse(cfg: dict) -> str:
+            client = AsyncOpenAI(
+                api_key=cfg["api_key"],
+                base_url=cfg["base_url"] or None,
+            )
+            response = await client.chat.completions.create(
+                model=cfg["model"],
+                messages=[{"role": "user", "content": prompt}],
+                temperature=_qp_temp,
+                max_tokens=1024,
+            )
+            return response.choices[0].message.content or ""
 
-        resp_text = response.choices[0].message.content or ""
+        resp_text = await LLMSelector.call_with_fallback("tender_parse", _do_quick_parse)
         try:
             result = _extract_json_from_response(resp_text)
         except (json.JSONDecodeError, ValueError):
@@ -353,16 +354,9 @@ class TenderParseService:
         """
         from openai import AsyncOpenAI
 
-        # 加载 LLM 任务配置
-        cfg = LLMSelector.get_client_config("tender_parse")
-        model = cfg["model"]
+        # 加载 LLM 任务配置（带自动容灾 fallback）
         temperature = LLMSelector.get_temperature("tender_parse")
         max_tokens = LLMSelector.get_max_tokens("tender_parse")
-
-        client = AsyncOpenAI(
-            api_key=cfg["api_key"],
-            base_url=cfg["base_url"] or None,
-        )
 
         chunks = _chunk_text(text)
         merged_result = {
@@ -387,14 +381,20 @@ class TenderParseService:
                 tender_content=chunk,
             )
 
-            response = await client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            async def _do_chunk_parse(cfg: dict, _prompt=prompt) -> str:
+                client = AsyncOpenAI(
+                    api_key=cfg["api_key"],
+                    base_url=cfg["base_url"] or None,
+                )
+                response = await client.chat.completions.create(
+                    model=cfg["model"],
+                    messages=[{"role": "user", "content": _prompt}],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                return response.choices[0].message.content or ""
 
-            resp_text = response.choices[0].message.content or ""
+            resp_text = await LLMSelector.call_with_fallback("tender_parse", _do_chunk_parse)
             try:
                 chunk_result = _extract_json_from_response(resp_text)
             except (json.JSONDecodeError, ValueError):

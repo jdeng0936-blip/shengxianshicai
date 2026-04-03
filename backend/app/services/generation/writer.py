@@ -132,25 +132,27 @@ def _build_user_prompt(
 # ── LLM 调用 ─────────────────────────────────────────────
 
 async def _call_llm(prompt: str) -> str:
-    """调用 LLM 生成章节内容"""
-    cfg = LLMSelector.get_client_config("bid_section_generate")
-    client = AsyncOpenAI(
-        api_key=cfg["api_key"],
-        base_url=cfg["base_url"] or None,
-    )
+    """调用 LLM 生成章节内容（带自动容灾 fallback）"""
     temperature = LLMSelector.get_temperature("bid_section_generate")
     max_tokens = LLMSelector.get_max_tokens("bid_section_generate")
 
-    resp = await client.chat.completions.create(
-        model=cfg["model"],
-        temperature=temperature,
-        max_tokens=max_tokens,
-        messages=[
-            {"role": "system", "content": _WRITER_SYSTEM},
-            {"role": "user", "content": prompt},
-        ],
-    )
-    return resp.choices[0].message.content or ""
+    async def _do_call(cfg: dict) -> str:
+        client = AsyncOpenAI(
+            api_key=cfg["api_key"],
+            base_url=cfg["base_url"] or None,
+        )
+        resp = await client.chat.completions.create(
+            model=cfg["model"],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": _WRITER_SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return resp.choices[0].message.content or ""
+
+    return await LLMSelector.call_with_fallback("bid_section_generate", _do_call)
 
 
 # ── 主入口 ────────────────────────────────────────────────

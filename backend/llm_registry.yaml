@@ -1,111 +1,207 @@
 # ═══════════════════════════════════════════════════════
-# LLM 模型注册表 — 鲜标智投 · 多 Provider 路由
+# LLM 模型注册表 — 鲜标智投 · 四级容灾路由
 # ═══════════════════════════════════════════════════════
 #
-# 规则：
+# 架构规则：
 # 1. 业务代码严禁硬编码模型名，必须通过 task_type 查表
-# 2. 每个 task_type 的 models 列表中，格式为 "provider/model_name"
-# 3. provider 决定使用哪组 API Key + Base URL（见 config.py）
-# 4. 首选模型失败时，自动 fallback 到下一个
-# 5. 修改此文件即可全局切换模型，无需改代码
-
-# --- Provider 配置说明 ---
+# 2. 格式 "provider/model_name"，provider 决定 API Key + Base URL
+# 3. 首选模型失败时，熔断器自动 fallback 到下一个
+# 4. 修改此文件即可全局切换模型，无需改代码
 #
-#   openai:    → OPENAI_API_KEY + OPENAI_BASE_URL (GPT 系列)
-#   gemini:    → GEMINI_API_KEY + GEMINI_BASE_URL (Google)
-#   deepseek:  → DEEPSEEK_API_KEY + DEEPSEEK_BASE_URL (国产合规)
-#   qwen:      → QWEN_API_KEY + QWEN_BASE_URL (通义千问)
+# Provider 配置说明：
+#   openai  → OPENAI_API_KEY + OPENAI_BASE_URL (GPT 系列)
+#   claude  → CLAUDE_API_KEY + CLAUDE_BASE_URL (Anthropic Opus/Sonnet)
+#   gemini  → GEMINI_API_KEY + GEMINI_BASE_URL (Google)
+#   deepseek → DEEPSEEK_API_KEY + DEEPSEEK_BASE_URL (国产合规兜底)
+#   qwen    → QWEN_API_KEY + QWEN_BASE_URL (通义千问，国产合规兜底)
 #
-# 模型名格式: "provider/model_id"
-#   例: "openai/gpt-5.4" → 使用 OPENAI_API_KEY 调 gpt-5.4
-#   例: "gemini/gemini-3.1-pro-preview" → 使用 GEMINI_API_KEY 调 gemini-3.1
+# 分发平台场景：所有 provider 可共用同一个 key/base_url，
+# 在 .env 中只配 OPENAI_API_KEY + OPENAI_BASE_URL 即可，
+# 其余 provider 未配时自动 fallback 到 OPENAI_* 配置。
+#
+# ═══════════════════════════════════════════════════════
+# 四级复杂度路由策略
+# ═══════════════════════════════════════════════════════
+#
+# T0 安全关键 — 零容错，废标/合规不能错
+#    Opus → GPT-5.4-pro → Gemini-3.1 → GPT-5-mini
+#
+# T1 核心生成 — 质量优先，标书/路由/报价
+#    GPT-5.4-pro → Opus → Gemini-3.1 → GPT-5-mini
+#
+# T2 通用业务 — 均衡，对话/分析/匹配
+#    Gemini-3.1 → GPT-5.4-pro → Opus → GPT-5-mini
+#
+# T3 轻量提取 — 性价比，检索/模板
+#    Gemini-3.1 → GPT-5.4-pro → GPT-5-mini
+# ═══════════════════════════════════════════════════════
 
-# --- 任务路由表 ---
 tasks:
 
-  # ===== 核心 AI 对话 =====
+  # ═══════════════════════════════════════
+  # T0 安全关键 — Opus 主力
+  # ═══════════════════════════════════════
 
-  # AI 路由引擎 — Tool Calling 意图识别 + 8大投标工具调度
+  # 投标合规性检查 — 废标项/资质/一致性，错一个就废标
+  compliance_check:
+    models:
+      - "claude/claude-opus-4-6"
+      - "openai/gpt-5.4-pro"
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5-mini"
+    temperature: 0.1
+    max_tokens: 2048
+    tier: T0
+    note: "安全关键 — Opus 复杂推理+法规理解最强，合规检查零容错"
+
+  # 招标文件解析 — 结构化提取，废标项不能遗漏
+  tender_parse:
+    models:
+      - "claude/claude-opus-4-6"
+      - "openai/gpt-5.4-pro"
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5-mini"
+    temperature: 0.1
+    max_tokens: 4096
+    tier: T0
+    note: "安全关键 — 解析精度要求极高，废标项遗漏=直接出局"
+
+  # ═══════════════════════════════════════
+  # T1 核心生成 — GPT 主力
+  # ═══════════════════════════════════════
+
+  # 投标章节生成 — 商务文档质量要求最高
+  bid_section_generate:
+    models:
+      - "openai/gpt-5.4-pro"
+      - "claude/claude-opus-4-6"
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5-mini"
+    temperature: 0.3
+    max_tokens: 8192
+    tier: T1
+    note: "核心生成 — GPT 商务中文文档能力强，Opus 兜底保质量"
+
+  # AI 路由引擎 — Tool Calling 意图识别
   tool_calling:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview", "deepseek/deepseek-chat"]
+    models:
+      - "openai/gpt-5.4-pro"
+      - "claude/claude-opus-4-6"
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5-mini"
     temperature: 0.1
     max_tokens: 1024
-    note: "核心路由，要求工具调用准确率最高"
+    tier: T1
+    note: "核心路由 — GPT 工具调用准确率最高"
+
+  # 报价提取 — 数字精度要求高
+  quotation_extract:
+    models:
+      - "openai/gpt-5.4-pro"
+      - "claude/claude-opus-4-6"
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5-mini"
+    temperature: 0.1
+    max_tokens: 2048
+    tier: T1
+    note: "核心提取 — 报价数字不能错，GPT 结构化输出稳定"
+
+  # 报价分析 — 价格策略计算
+  pricing_analysis:
+    models:
+      - "openai/gpt-5.4-pro"
+      - "claude/claude-opus-4-6"
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5-mini"
+    temperature: 0.2
+    max_tokens: 1024
+    tier: T1
+    note: "核心分析 — 报价下浮率计算需数学推理准确"
+
+  # ═══════════════════════════════════════
+  # T2 通用业务 — Gemini 主力
+  # ═══════════════════════════════════════
 
   # AI 对话 — 投标智能助手通用会话
   chat:
-    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4", "deepseek/deepseek-chat"]
+    models:
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4-pro"
+      - "claude/claude-opus-4-6"
+      - "openai/gpt-5-mini"
     temperature: 0.5
     max_tokens: 2048
+    tier: T2
+    note: "通用对话 — Gemini 性价比高，响应快"
 
   # 工具结果解读
   tool_result_interpret:
-    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
+    models:
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4-pro"
+      - "claude/claude-opus-4-6"
+      - "openai/gpt-5-mini"
     temperature: 0.3
     max_tokens: 2048
+    tier: T2
 
-  # ===== 投标文档生成 =====
-
-  # 投标章节生成 — GPT-5.4 主力（商务文档最强）
-  bid_section_generate:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview", "deepseek/deepseek-chat"]
-    temperature: 0.3
-    max_tokens: 8192
-    note: "投标文件生成质量要求最高，GPT-5.4 商务文档能力强"
-
-  # 招标文件解析 — 结构化提取
-  tender_parse:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview"]
-    temperature: 0.1
-    max_tokens: 4096
-    note: "解析精度要求极高，尤其废标项不能遗漏"
-
-  # 投标合规性检查 — 安全关键
-  compliance_check:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview"]
-    temperature: 0.1
-    max_tokens: 2048
-    note: "安全关键任务，需最高推理精度"
-
-  # ===== 知识库与检索 =====
-
-  regulation_retrieval:
-    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
-    temperature: 0.1
-    max_tokens: 1024
-
-  template_matching:
-    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
-    temperature: 0.1
-    max_tokens: 2048
-
-  # ===== 报价引擎辅助 =====
-
-  pricing_analysis:
-    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
-    temperature: 0.2
-    max_tokens: 1024
-
-  quotation_extract:
-    models: ["openai/gpt-5.4", "gemini/gemini-3.1-pro-preview"]
-    temperature: 0.1
-    max_tokens: 2048
-
-  # ===== 商机漏斗 =====
-
-  tender_text_parse:
-    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4"]
-    temperature: 0.1
-    max_tokens: 2048
-    note: "从公告原文提取结构化信息，精度要求高"
-
+  # 招标匹配分析 — 企业能力 vs 招标需求
   tender_match_analysis:
-    models: ["gemini/gemini-3.1-pro-preview", "openai/gpt-5.4", "deepseek/deepseek-chat"]
+    models:
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4-pro"
+      - "claude/claude-opus-4-6"
+      - "openai/gpt-5-mini"
     temperature: 0.2
     max_tokens: 2048
-    note: "招标公告与企业能力匹配分析，需结构化JSON输出"
+    tier: T2
+    note: "通用分析 — 匹配度计算 Gemini 结构化输出够用"
 
-  # ===== Embedding =====
+  # 招标公告文本提取
+  tender_text_parse:
+    models:
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4-pro"
+      - "claude/claude-opus-4-6"
+      - "openai/gpt-5-mini"
+    temperature: 0.1
+    max_tokens: 2048
+    tier: T2
+    note: "通用提取 — 公告结构化，Gemini 足够"
+
+  # ═══════════════════════════════════════
+  # T3 轻量提取 — Gemini 主力，不挂 Opus
+  # ═══════════════════════════════════════
+
+  # 法规检索增强
+  regulation_retrieval:
+    models:
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4-pro"
+      - "openai/gpt-5-mini"
+    temperature: 0.1
+    max_tokens: 1024
+    tier: T3
+    note: "轻量检索 — 不需要强推理，省 Opus 额度"
+
+  # 模板匹配
+  template_matching:
+    models:
+      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4-pro"
+      - "openai/gpt-5-mini"
+    temperature: 0.1
+    max_tokens: 2048
+    tier: T3
+    note: "轻量匹配 — 模板选择逻辑简单"
+
+  # ═══════════════════════════════════════
+  # Embedding — 独立通道
+  # ═══════════════════════════════════════
 
   embedding:
-    models: ["gemini/gemini-embedding-001", "qwen/text-embedding-v3"]
+    models:
+      - "gemini/gemini-embedding-001"
+      - "qwen/text-embedding-v3"
+    tier: embedding
+    note: "向量化独立通道，不走 LLM 熔断逻辑"

@@ -1,7 +1,7 @@
 {
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"python -m pytest tests/test_generation_compliance_gate.py::TestProjectContextConsistency -v --tb=short 2>&1\",\"timeout\":30000,\"description\":\"重跑项目上下文测试\"}",
-  "error": "Exit code 1\n============================= test session starts ==============================\nplatform darwin -- Python 3.11.15, pytest-9.0.2, pluggy-1.6.0 -- /Users/hycdq2026/.pyenv/versions/3.11.15/bin/python\ncachedir: .pytest_cache\nrootdir: /Users/hycdq2026/Desktop/shangxianshicai/-/backend\nconfigfile: pytest.ini\nplugins: asyncio-1.3.0, langsmith-0.7.24, anyio-4.13.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollecti...",
-  "timestamp": "2026-04-03T06:57:51.032Z",
-  "retry_count": 4
+  "tool_name": "Read",
+  "tool_input_preview": "{\"file_path\":\"/Users/hycdq2026/.claude/projects/-Users-hycdq2026-Desktop-shangxianshicai/112172b3-accc-4cd9-8061-4eead89b54d1/tool-results/toolu_01XG38KbRb7Y6xjLQeE6Z5ng.txt\"}",
+  "error": "File content (10485 tokens) exceeds maximum allowed tokens (10000). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file.",
+  "timestamp": "2026-04-03T08:35:56.274Z",
+  "retry_count": 1
 }

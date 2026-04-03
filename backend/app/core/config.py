@@ -51,11 +51,15 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
 
-    # Provider: deepseek（国产合规）
+    # Provider: claude（Anthropic Opus / Sonnet 系列）
+    CLAUDE_API_KEY: str = ""
+    CLAUDE_BASE_URL: str = "https://api.anthropic.com/v1"
+
+    # Provider: deepseek（国产合规兜底）
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
 
-    # Provider: qwen（通义千问，备选）
+    # Provider: qwen（通义千问，国产合规兜底）
     QWEN_API_KEY: str = ""
     QWEN_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 

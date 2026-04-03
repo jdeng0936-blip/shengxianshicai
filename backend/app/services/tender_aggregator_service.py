@@ -134,23 +134,25 @@ class TenderAggregatorService:
         if len(raw_text.strip()) < 30:
             raise ValueError("公告内容过短，请粘贴完整的招标公告")
 
-        # AI 提取结构化信息
-        cfg = LLMSelector.get_client_config("tender_text_parse")
-        client = AsyncOpenAI(api_key=cfg["api_key"], base_url=cfg["base_url"] or None)
-
+        # AI 提取结构化信息（带自动容灾 fallback）
         prompt_text = prompt_manager.format_prompt(
             "tender_text_parse", "v1_extract",
-            raw_text=raw_text[:6000],  # 限制长度
+            raw_text=raw_text[:6000],
         )
+        _temperature = LLMSelector.get_temperature("tender_text_parse")
+        _max_tokens = LLMSelector.get_max_tokens("tender_text_parse")
 
-        response = await client.chat.completions.create(
-            model=cfg["model"],
-            messages=[{"role": "user", "content": prompt_text}],
-            temperature=LLMSelector.get_temperature("tender_text_parse"),
-            max_tokens=LLMSelector.get_max_tokens("tender_text_parse"),
-        )
+        async def _do_parse(cfg: dict) -> str:
+            client = AsyncOpenAI(api_key=cfg["api_key"], base_url=cfg["base_url"] or None)
+            response = await client.chat.completions.create(
+                model=cfg["model"],
+                messages=[{"role": "user", "content": prompt_text}],
+                temperature=_temperature,
+                max_tokens=_max_tokens,
+            )
+            return response.choices[0].message.content or ""
 
-        resp_text = response.choices[0].message.content or ""
+        resp_text = await LLMSelector.call_with_fallback("tender_text_parse", _do_parse)
         try:
             parsed = _extract_json(resp_text)
         except (json.JSONDecodeError, ValueError):
@@ -246,10 +248,7 @@ class TenderAggregatorService:
             logger.warning(f"Jina Reader 返回内容过短或错误: {content[:100]}")
             return []
 
-        # AI 从 Markdown 提取食材配送相关公告（限定地区）
-        cfg = LLMSelector.get_client_config("tender_text_parse")
-        ai_client = AsyncOpenAI(api_key=cfg["api_key"], base_url=cfg["base_url"] or None)
-
+        # AI 从 Markdown 提取食材配送相关公告（带自动容灾 fallback）
         region_filter = ""
         if region:
             region_filter = f"\n重要：只提取地域为「{region}」的公告，忽略其他地区的项目。"
@@ -264,14 +263,17 @@ class TenderAggregatorService:
             f"如果没有相关公告，返回空数组 []。只输出 JSON。"
         )
 
-        response = await ai_client.chat.completions.create(
-            model=cfg["model"],
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=2048,
-        )
+        async def _do_extract_page(cfg: dict) -> str:
+            ai_client = AsyncOpenAI(api_key=cfg["api_key"], base_url=cfg["base_url"] or None)
+            response = await ai_client.chat.completions.create(
+                model=cfg["model"],
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=2048,
+            )
+            return response.choices[0].message.content or "[]"
 
-        resp_text = response.choices[0].message.content or "[]"
+        resp_text = await LLMSelector.call_with_fallback("tender_text_parse", _do_extract_page)
         try:
             items = _extract_json(resp_text)
             if isinstance(items, dict):
@@ -585,12 +587,6 @@ class TenderAggregatorService:
         graph_text = cap_svc.graph_to_text(graph)
 
         try:
-            cfg = LLMSelector.get_client_config("tender_match_analysis")
-            client = AsyncOpenAI(
-                api_key=cfg["api_key"],
-                base_url=cfg["base_url"] or None,
-            )
-
             prompt_text = prompt_manager.format_prompt(
                 "tender_match_analysis", "v1_capability_match",
                 notice_title=notice.title,
@@ -602,15 +598,25 @@ class TenderAggregatorService:
                 content_summary=notice.content_summary or "无详细信息",
                 capability_graph=graph_text,
             )
+            _match_temp = LLMSelector.get_temperature("tender_match_analysis")
+            _match_max = LLMSelector.get_max_tokens("tender_match_analysis")
 
-            response = await client.chat.completions.create(
-                model=cfg["model"],
-                messages=[{"role": "user", "content": prompt_text}],
-                temperature=LLMSelector.get_temperature("tender_match_analysis"),
-                max_tokens=LLMSelector.get_max_tokens("tender_match_analysis"),
+            async def _do_match(cfg: dict) -> str:
+                client = AsyncOpenAI(
+                    api_key=cfg["api_key"],
+                    base_url=cfg["base_url"] or None,
+                )
+                response = await client.chat.completions.create(
+                    model=cfg["model"],
+                    messages=[{"role": "user", "content": prompt_text}],
+                    temperature=_match_temp,
+                    max_tokens=_match_max,
+                )
+                return response.choices[0].message.content or ""
+
+            resp_text = await LLMSelector.call_with_fallback(
+                "tender_match_analysis", _do_match
             )
-
-            resp_text = response.choices[0].message.content or ""
             result = _extract_json(resp_text)
 
             notice.match_score = result.get("match_score")
