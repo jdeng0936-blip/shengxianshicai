@@ -120,8 +120,8 @@
     },
     {
       "path": "backend/app/api/v1/bid_project.py",
-      "accessCount": 37,
-      "lastAccessed": 1775205623173,
+      "accessCount": 42,
+      "lastAccessed": 1775215593568,
       "type": "file"
     },
     {
@@ -156,8 +156,8 @@
     },
     {
       "path": "backend/app/models/bid_project.py",
-      "accessCount": 14,
-      "lastAccessed": 1775208879955,
+      "accessCount": 16,
+      "lastAccessed": 1775211472642,
       "type": "directory"
     },
     {
@@ -311,6 +311,12 @@
       "type": "directory"
     },
     {
+      "path": "backend/app/services/embedding_service.py",
+      "accessCount": 3,
+      "lastAccessed": 1775211470877,
+      "type": "file"
+    },
+    {
       "path": "backend/app/services/retriever.py",
       "accessCount": 2,
       "lastAccessed": 1775117402093,
@@ -350,12 +356,6 @@
       "path": "backend/app/services/generation/__init__.py",
       "accessCount": 2,
       "lastAccessed": 1775190036193,
-      "type": "file"
-    },
-    {
-      "path": "backend/app/services/embedding_service.py",
-      "accessCount": 2,
-      "lastAccessed": 1775191004337,
       "type": "file"
     },
     {

@@ -1047,6 +1047,79 @@ async def diversify_chapter(
         raise HTTPException(status_code=500, detail=f"差异化处理失败: {str(e)}")
 
 
+# ========== 评分矩阵提取 ==========
+
+@router.post("/{project_id}/scoring-matrix", response_model=ApiResponse)
+async def extract_scoring_matrix(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """评分矩阵自动提取 — 从招标评分标准拆解子项+权重"""
+    from app.services.scoring_extractor import ScoringExtractor
+
+    extractor = ScoringExtractor(session)
+    try:
+        matrix = await extractor.extract(project_id, tenant_id)
+        return ApiResponse(data={
+            "project_id": matrix.project_id,
+            "total_score": matrix.total_score,
+            "extraction_method": matrix.extraction_method,
+            "item_count": len(matrix.items),
+            "items": [
+                {
+                    "parent_req_id": it.parent_req_id,
+                    "sub_item_name": it.sub_item_name,
+                    "max_score": it.max_score,
+                    "scoring_criteria": it.scoring_criteria,
+                    "response_suggestion": it.response_suggestion,
+                    "priority": it.priority,
+                    "extraction_method": it.extraction_method,
+                }
+                for it in matrix.items
+            ],
+        })
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"评分矩阵提取失败: {str(e)}")
+
+
+@router.get("/{project_id}/scoring-matrix", response_model=ApiResponse)
+async def get_scoring_matrix(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """获取已提取的评分矩阵（同 POST，幂等读取）"""
+    from app.services.scoring_extractor import ScoringExtractor
+
+    extractor = ScoringExtractor(session)
+    try:
+        matrix = await extractor.extract(project_id, tenant_id)
+        return ApiResponse(data={
+            "project_id": matrix.project_id,
+            "total_score": matrix.total_score,
+            "extraction_method": matrix.extraction_method,
+            "item_count": len(matrix.items),
+            "items": [
+                {
+                    "parent_req_id": it.parent_req_id,
+                    "sub_item_name": it.sub_item_name,
+                    "max_score": it.max_score,
+                    "scoring_criteria": it.scoring_criteria,
+                    "response_suggestion": it.response_suggestion,
+                    "priority": it.priority,
+                    "extraction_method": it.extraction_method,
+                }
+                for it in matrix.items
+            ],
+        })
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # ========== 评分覆盖率报告 ==========
 
 @router.get("/{project_id}/coverage-report", response_model=ApiResponse)
