@@ -104,11 +104,12 @@ def ngram_fingerprint(text_a: str, text_b: str, n: int = 3) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-def paragraph_hash_match(text_a: str, text_b: str, min_length: int = 50) -> list[str]:
+def paragraph_hash_match(text_a: str, text_b: str, min_length: int = 20) -> list[str]:
     """段落级 MD5 精确匹配
 
     将文本按段落切分，对每段计算 MD5，返回完全重复的段落列表。
     仅检测长度 >= min_length 的段落（过短段落无意义）。
+    注: 中文字符信息密度高，20 字符约等于英文 50 字符的内容量。
     """
     def _split_and_hash(text: str) -> dict[str, str]:
         result = {}
@@ -258,7 +259,11 @@ class SimilarityDetector:
             exact_paras = paragraph_hash_match(cur_text, hist_text)
 
             # 维度1: embedding 余弦（降级容错：失败时置 0）
-            emb_score = await self._embedding_compare(cur_text, hist_text)
+            try:
+                emb_score = await self._embedding_compare(cur_text, hist_text)
+            except Exception as e:
+                logger.warning(f"[相似度检测] embedding 对比异常（降级为0）: {e}")
+                emb_score = 0.0
 
             risk = classify_risk(emb_score, ngram_score, len(exact_paras))
 

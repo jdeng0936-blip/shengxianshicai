@@ -325,16 +325,14 @@ class TestCredentialChapterMatch:
         # 第一章标题不含"质量/安全/管理"，不在检查范围
         assert len(issues) == 0
 
-    def test_integrated_in_check_compliance(self):
+    @pytest.mark.asyncio
+    async def test_integrated_in_check_compliance(self):
         """195号文检查集成到主入口"""
-        import asyncio
         drafts = [
             _draft("第三章", "食材采购", "冷链车辆 12 辆" + _long_content(500)),
             _draft("第五章", "配送方案", "冷链车辆 8 辆" + _long_content(500)),
         ]
-        report = asyncio.get_event_loop().run_until_complete(
-            check_compliance(drafts, requirements=[])
-        )
+        report = await check_compliance(drafts, requirements=[])
         # 应检测到冷链车辆矛盾
         contradiction = [i for i in report.issues if "数据矛盾" in i.description]
         assert len(contradiction) >= 1
@@ -406,15 +404,13 @@ class TestProjectContextConsistency:
         assert len(proj_issues) >= 1
         assert proj_issues[0].is_blocking
 
-    def test_integrated_in_check_compliance(self):
+    @pytest.mark.asyncio
+    async def test_integrated_in_check_compliance(self):
         """项目上下文检查集成到主入口"""
-        import asyncio
         drafts = [_draft("第五章", "配送方案",
                          "根据阳光小学食堂的要求，我公司为阳光小学提供配送。" * 2 + _long_content(400))]
         ctx = {"customer_type": "学校", "tender_org": "育才中学", "project_name": ""}
-        report = asyncio.get_event_loop().run_until_complete(
-            check_compliance(drafts, requirements=[], project_context=ctx)
-        )
+        report = await check_compliance(drafts, requirements=[], project_context=ctx)
         # 应检测到采购方残留 → blocking → passed=False
         assert report.passed is False
         org_issues = [i for i in report.issues if "残留其他项目采购方" in i.description]

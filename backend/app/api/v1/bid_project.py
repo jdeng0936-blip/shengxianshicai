@@ -1005,7 +1005,7 @@ async def check_similarity(
 
 # ========== 文本差��化 ==========
 
-class DiversifyRequest(BaseModel):
+class DiversifyRequest(_BaseModel):
     intensity: str = "medium"  # light / medium / heavy
 
 @router.post("/{project_id}/chapters/{chapter_id}/diversify", response_model=ApiResponse)

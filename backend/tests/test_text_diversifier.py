@@ -111,14 +111,16 @@ class TestL2Diversify:
     @pytest.mark.asyncio
     async def test_l2_calls_llm(self):
         """L2 通过 call_with_fallback 调用 LLM"""
-        mock_result = "本单位具备完备的低温物流运送体系，拥有专业冷藏运输车辆及控温仓储设施。"
+        input_text = "我公司拥有完善的冷链配送方案" * 10  # 130 字符
+        # mock 结果必须 > input 长度的 50%（业务逻辑防止 LLM 返回过短内容）
+        mock_result = "本单位具备完备的低温物流运送体系，拥有专业冷藏运输车辆及控温仓储设施。" * 3
 
         with patch(
             "app.services.text_diversifier.LLMSelector.call_with_fallback",
             new_callable=AsyncMock,
             return_value=mock_result,
         ):
-            result, ok = await diversify_l2("我公司拥有完善的冷链配送方案" * 10)
+            result, ok = await diversify_l2(input_text)
             assert ok is True
             assert result == mock_result
 

@@ -197,7 +197,10 @@ async def diversify_l2(text: str) -> tuple[str, bool]:
         return text, False
 
     temperature = 0.6  # 较高温度增加多样性
-    max_tokens = LLMSelector.get_max_tokens("bid_section_generate")
+    try:
+        max_tokens = LLMSelector.get_max_tokens("bid_section_generate")
+    except Exception:
+        max_tokens = 8192
 
     async def _do_call(cfg: dict) -> str:
         client = AsyncOpenAI(
