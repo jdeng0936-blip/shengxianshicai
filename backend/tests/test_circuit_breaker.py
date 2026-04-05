@@ -159,20 +159,26 @@ class TestCallWithFallback:
 
     @pytest.mark.asyncio
     async def test_fallback_on_first_failure(self):
-        """第一个失败，自动切到第二个"""
+        """第一个失败，重试后自动切到第二个
+
+        ConnectionError 被分类为 RETRY_SAME，同一 provider 重试
+        max_retries_per_provider 次后切换到下一个。
+        """
         call_log = []
 
         async def mock_call(cfg):
             call_log.append(cfg["provider"])
             if cfg["provider"] == "openai":
-                raise ConnectionError("API down")
+                # 用认证错误(401)确保立即切换，不重试
+                err = Exception("Unauthorized")
+                err.status_code = 401
+                raise err
             return "fallback_ok"
 
         result = await LLMSelector.call_with_fallback("bid_section_generate", mock_call)
         assert result == "fallback_ok"
-        assert len(call_log) == 2
         assert call_log[0] == "openai"
-        # 第二个是 gemini 或 deepseek
+        assert call_log.count("openai") == 1  # 401 不重试，直接切换
 
     @pytest.mark.asyncio
     async def test_all_fail_raises(self):
@@ -203,14 +209,19 @@ class TestCallWithFallback:
     @pytest.mark.asyncio
     async def test_circuit_breaker_updated_after_call(self):
         """调用后熔断器状态正确更新"""
+        reset()  # 确保干净状态
+
         async def mock_call(cfg):
             if cfg["provider"] == "openai":
-                raise ConnectionError("down")
+                # 用 529 过载错误：计入熔断失败且不重试同一 provider
+                err = Exception("Overloaded")
+                err.status_code = 529
+                raise err
             return "ok"
 
         await LLMSelector.call_with_fallback("bid_section_generate", mock_call)
 
-        # openai 应记录一次失败
+        # openai 应记录一次失败（529 计入熔断）
         status = get_status("openai")
         assert status["total_failures"] == 1
 

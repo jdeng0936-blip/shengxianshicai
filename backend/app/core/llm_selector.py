@@ -218,17 +218,29 @@ class LLMSelector:
         return int(config.get("max_tokens", 2048))
 
     @staticmethod
-    async def call_with_fallback(task_type: str, call_fn, timeout: float = 30.0):
-        """带自动容灾的 LLM 调用包装器
+    async def call_with_fallback(
+        task_type: str,
+        call_fn,
+        timeout: float = 30.0,
+        max_retries_per_provider: int = 2,
+    ):
+        """带错误分类和自动容灾的 LLM 调用包装器
 
-        遍历 task_type 的 models fallback 链，跳过熔断 provider，
-        成功时记录健康状态，失败时记录并尝试下一个。
+        流程:
+          1. 遍历 task_type 的 models fallback 链
+          2. 跳过熔断中的 provider
+          3. 调用失败时，错误分类器决定恢复策略:
+             - RETRY_SAME: 指数退避后重试同一 provider（限流/网络抖动）
+             - RETRY_NEXT: 切换下一个 provider（过载/认证/超时）
+             - COMPACT_RETRY: 上下文超限，向上抛出供调用方压缩
+             - FAIL_FAST: 不重试
+          4. 限流和网络抖动不计入熔断器失败计数
 
         Args:
             task_type: 任务类型（对应 llm_registry.yaml 的 key）
             call_fn: 异步调用函数，签名: async (client_config: dict) -> result
-                     client_config 含 api_key, base_url, model, provider
             timeout: 单次调用超时秒数
+            max_retries_per_provider: 同一 provider 最大重试次数（仅 RETRY_SAME 策略）
 
         Returns:
             call_fn 的返回值
@@ -238,6 +250,9 @@ class LLMSelector:
         """
         import asyncio
         from app.core.circuit_breaker import is_available, record_success, record_failure
+        from app.core.llm_errors import (
+            classify_error, RecoveryAction, exponential_backoff,
+        )
 
         all_models = LLMSelector.get_all_models(task_type)
         if not all_models:
@@ -249,18 +264,48 @@ class LLMSelector:
             if not is_available(provider):
                 continue
 
-            try:
-                result = await asyncio.wait_for(call_fn(cfg), timeout=timeout)
-                record_success(provider)
-                return result
-            except asyncio.TimeoutError:
-                msg = f"{provider}/{cfg['model']} 超时 ({timeout}s)"
-                record_failure(provider, msg)
-                errors.append(msg)
-            except Exception as e:
-                msg = f"{provider}/{cfg['model']}: {type(e).__name__}: {str(e)[:100]}"
-                record_failure(provider, msg)
-                errors.append(msg)
+            retries = 0
+            while retries <= max_retries_per_provider:
+                try:
+                    result = await asyncio.wait_for(call_fn(cfg), timeout=timeout)
+                    record_success(provider)
+                    return result
+                except Exception as e:
+                    classified = classify_error(e)
+                    log_msg = (
+                        f"{provider}/{cfg['model']} [{classified.error_type.value}] "
+                        f"{classified.message}"
+                    )
+
+                    # 记录到熔断器（根据错误类型决定是否计入失败）
+                    record_failure(
+                        provider, log_msg,
+                        count_as_failure=classified.should_count_failure,
+                    )
+                    errors.append(log_msg)
+
+                    # 上下文超限: 向上抛出，调用方需压缩后重试
+                    if classified.action == RecoveryAction.COMPACT_RETRY:
+                        raise
+
+                    # 不重试
+                    if classified.action == RecoveryAction.FAIL_FAST:
+                        raise
+
+                    # 退避后重试同一 provider（限流/网络抖动）
+                    if classified.action == RecoveryAction.RETRY_SAME:
+                        if retries < max_retries_per_provider:
+                            if classified.retry_after > 0:
+                                await asyncio.sleep(classified.retry_after)
+                            else:
+                                await exponential_backoff(retries)
+                            retries += 1
+                            continue
+                        # 重试用尽，切换 provider
+                        break
+
+                    # 切换下一个 provider
+                    break
 
         # 全部失败
         raise RuntimeError(

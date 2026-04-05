@@ -86,13 +86,30 @@ def record_success(provider: str) -> None:
         circuit.state = CircuitState.CLOSED
 
 
-def record_failure(provider: str, error: Optional[str] = None) -> None:
-    """记录请求失败"""
+def record_failure(
+    provider: str,
+    error: Optional[str] = None,
+    count_as_failure: bool = True,
+) -> None:
+    """记录请求失败
+
+    Args:
+        provider: provider 名称
+        error: 错误描述
+        count_as_failure: 是否计入连续失败计数。
+            限流(429)和网络抖动不应触发熔断，设为 False。
+    """
     circuit = _get_circuit(provider)
     circuit.total_calls += 1
     circuit.total_failures += 1
-    circuit.failure_count += 1
     circuit.last_failure_time = time.time()
+
+    if not count_as_failure:
+        # 限流/网络抖动: 记录但不累加连续失败，不触发熔断
+        logger.info("熔断器记录(不计数): %s — %s", provider, error)
+        return
+
+    circuit.failure_count += 1
 
     if circuit.state == CircuitState.HALF_OPEN:
         circuit.state = CircuitState.OPEN
