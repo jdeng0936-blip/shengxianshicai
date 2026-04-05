@@ -28,6 +28,41 @@ async def publish_progress(project_id: int, event: dict) -> None:
     await redis.publish(_channel(project_id), payload)
 
 
+async def publish_node_event(
+    project_id: int,
+    node: int,
+    node_name: str,
+    status: str,
+    chapter_no: str = "",
+    detail: str = "",
+    metadata: dict | None = None,
+) -> None:
+    """发布标准化的节点进度事件
+
+    事件格式:
+        {
+            "type": "node_progress",
+            "node": 3,
+            "node_name": "writer",
+            "status": "start" | "progress" | "done" | "error" | "retry",
+            "chapter_no": "第一章",
+            "detail": "RAG 上下文超限，压缩至 3000 字符重试",
+            "metadata": { ... }
+        }
+    """
+    event = {
+        "type": "node_progress",
+        "node": node,
+        "node_name": node_name,
+        "status": status,
+        "chapter_no": chapter_no,
+        "detail": detail,
+    }
+    if metadata:
+        event["metadata"] = metadata
+    await publish_progress(project_id, event)
+
+
 async def subscribe_progress(project_id: int) -> AsyncGenerator[dict, None]:
     """订阅生成进度事件流
 

@@ -205,3 +205,30 @@ tasks:
       - "qwen/text-embedding-v3"
     tier: embedding
     note: "向量化独立通道，不走 LLM 熔断逻辑"
+
+
+# ═══════════════════════════════════════════════════════
+# 特征开关 — 功能灰度发布
+# ═══════════════════════════════════════════════════════
+#
+# 控制实验性功能的启用/禁用，支持灰度发布和回滚。
+# 业务代码通过 feature_enabled("feature_name") 查询。
+# 修改此处即可全局切换功能，无需改代码。
+#
+features:
+  # 已上线（稳定）
+  ai_detection: true          # 反 AI 检测引擎（五维度）
+  text_diversifier: true      # 文本差异化引擎（L1+L2）
+  similarity_check: true      # 围串标语义相似度检测
+  capability_profile: true    # 企业能力画像（五维雷达）
+  credential_alert: true      # 资质到期预警（四级分色）
+  bid_checklist: true         # 投标准备检查清单
+  websocket_progress: true    # WebSocket 实时进度推送
+
+  # 灰度中（可随时关闭回滚）
+  reactive_compact: false     # RAG 响应式压缩（Phase 2b 开发中）
+  async_pipeline: false       # 生成流水线异步化（Phase 2a 开发中）
+
+  # 规划中（未实现）
+  bid_engine_v2: false        # BidEngine 通用框架合并
+  event_sourcing: false       # 项目状态事件溯源

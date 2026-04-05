@@ -37,36 +37,116 @@ class DraftChapter:
 
 # ── Prompt 构建 ───────────────────────────────────────────
 
-def _build_rag_block(retrieval: RetrievalResult) -> str:
-    """将 RetrievalResult 格式化为 LLM prompt 中的参考文本块"""
-    parts = []
+def _build_rag_block(retrieval: RetrievalResult, max_chars: int = 0) -> str:
+    """将 RetrievalResult 格式化为 LLM prompt 中的参考文本块
+
+    当 reactive_compact 特征开关启用且 max_chars > 0 时，
+    按优先级（法规 > 模板 > 案例）动态裁剪，确保总长不超限。
+    低优先级内容被截断时保留摘要首行，不丢弃。
+
+    Args:
+        retrieval: RAG 检索结果
+        max_chars: 最大字符数（0 = 不限制，使用固定截断）
+    """
+    from app.core.feature_gate import feature_enabled
+
+    use_compact = feature_enabled("reactive_compact") and max_chars > 0
+
+    # 三类素材，按优先级排列（法规最高，案例最低）
+    sections = []
 
     if retrieval.std_clauses:
-        parts.append("== 法规标准参考 ==")
+        items = []
         for clause in retrieval.std_clauses[:5]:
             title = clause.get("doc_title", "")
             clause_no = clause.get("clause_no", "")
-            text = clause.get("text", "")[:600]
+            text = clause.get("text", "")
             prefix = f"【{title}】" if title else ""
             if clause_no:
                 prefix += f"{clause_no} "
-            parts.append(f"{prefix}{text}")
+            items.append({"prefix": prefix, "text": text, "priority": 3})
+        sections.append(("== 法规标准参考 ==", items))
 
     if retrieval.template_snippets:
-        parts.append("\n== 知识库模板片段 ==")
+        items = []
         for snip in retrieval.template_snippets[:3]:
             name = snip.get("chapter_name", "")
-            text = snip.get("text", "")[:400]
-            parts.append(f"【{name}】{text}")
+            text = snip.get("text", "")
+            items.append({"prefix": f"【{name}】", "text": text, "priority": 2})
+        sections.append(("== 知识库模板片段 ==", items))
 
     if retrieval.bid_cases:
-        parts.append("\n== 历史中标案例参考 ==")
+        items = []
         for case in retrieval.bid_cases[:3]:
             name = case.get("chapter_name", "")
-            text = case.get("content", "")[:400]
-            parts.append(f"【{name}】{text}")
+            text = case.get("content", "")
+            items.append({"prefix": f"【{name}】", "text": text, "priority": 1})
+        sections.append(("== 历史中标案例参考 ==", items))
 
-    return "\n".join(parts) if parts else "暂无相关参考资料"
+    if not sections:
+        return "暂无相关参考资料"
+
+    if not use_compact:
+        # 原始行为: 固定截断
+        return _format_rag_fixed(sections)
+
+    # 响应式压缩: 按优先级动态分配字符预算
+    return _format_rag_compact(sections, max_chars)
+
+
+def _format_rag_fixed(sections: list) -> str:
+    """固定截断模式（原始行为）"""
+    # 各优先级的固定截断长度
+    _LIMITS = {3: 600, 2: 400, 1: 400}
+    parts = []
+    for header, items in sections:
+        parts.append(header)
+        for item in items:
+            limit = _LIMITS.get(item["priority"], 400)
+            text = item["text"][:limit]
+            parts.append(f"{item['prefix']}{text}")
+    return "\n".join(parts)
+
+
+def _format_rag_compact(sections: list, max_chars: int) -> str:
+    """响应式压缩模式 — 按优先级动态分配字符预算
+
+    策略:
+      1. 高优先级素材（法规）分配 50% 预算
+      2. 中优先级（模板）分配 30%
+      3. 低优先级（案例）分配 20%
+      4. 单条素材超出分配额度时截断，保留首行摘要
+    """
+    # 按优先级分配预算比例
+    _BUDGET_RATIOS = {3: 0.50, 2: 0.30, 1: 0.20}
+    parts = []
+    used = 0
+
+    for header, items in sections:
+        if used >= max_chars:
+            break
+        parts.append(header)
+        used += len(header) + 1
+
+        # 本类别的总预算
+        priority = items[0]["priority"] if items else 2
+        section_budget = int(max_chars * _BUDGET_RATIOS.get(priority, 0.2))
+        section_used = 0
+
+        for item in items:
+            if section_used >= section_budget:
+                break
+            remaining = section_budget - section_used
+            text = item["text"]
+            if len(text) > remaining:
+                # 截断: 保留前 remaining 字符，末尾标记
+                text = text[:remaining - 6] + "……(截断)"
+            line = f"{item['prefix']}{text}"
+            parts.append(line)
+            section_used += len(line) + 1
+            used += len(line) + 1
+
+    return "\n".join(parts)
 
 
 def _extract_sources(retrieval: RetrievalResult) -> list[str]:
@@ -117,15 +197,20 @@ def _build_user_prompt(
     retrieval: RetrievalResult,
     project_info: str,
     enterprise_info: str,
+    rag_max_chars: int = 0,
 ) -> str:
-    """组装完整的 user prompt"""
+    """组装完整的 user prompt
+
+    Args:
+        rag_max_chars: RAG 参考文本最大字符数（0 = 不限制）
+    """
     return (
         f"请编写投标文件【{plan.chapter_no} {plan.title}】章节正文。\n\n"
         f"== 招标项目信息 ==\n{project_info}\n\n"
         f"== 投标企业信息 ==\n{enterprise_info}\n\n"
         f"== 本章必须覆盖的关键点 ==\n{_build_key_points_text(plan)}\n\n"
         f"== 建议篇幅 ==\n约 {plan.estimated_words} 字\n\n"
-        f"{_build_rag_block(retrieval)}"
+        f"{_build_rag_block(retrieval, max_chars=rag_max_chars)}"
     )
 
 
@@ -206,13 +291,32 @@ async def generate_draft(
             plan.chapter_no, RetrievalResult(chapter_no=plan.chapter_no)
         )
 
-        prompt = _build_user_prompt(plan, retrieval, project_info, ent_info)
-
-        try:
-            content = await _call_llm(prompt)
-        except Exception as e:
-            logger.error("章节 %s LLM 生成失败: %s", plan.chapter_no, e)
-            content = f"（章节生成失败: {e}）"
+        # 首次尝试: 不限制 RAG 长度
+        # 上下文超限时: 压缩 RAG 后重试（响应式压缩）
+        content = ""
+        rag_max_chars = 0  # 0 = 不限制
+        for attempt in range(3):
+            prompt = _build_user_prompt(
+                plan, retrieval, project_info, ent_info,
+                rag_max_chars=rag_max_chars,
+            )
+            try:
+                content = await _call_llm(prompt)
+                break
+            except Exception as e:
+                from app.core.llm_errors import classify_error, LLMErrorType
+                classified = classify_error(e)
+                if classified.error_type == LLMErrorType.CONTEXT_TOO_LONG and attempt < 2:
+                    # 逐步压缩: 3000 → 1500 → 800
+                    rag_max_chars = [3000, 1500, 800][attempt]
+                    logger.warning(
+                        "章节 %s 上下文超限，压缩 RAG 至 %d 字符重试（第 %d 次）",
+                        plan.chapter_no, rag_max_chars, attempt + 1,
+                    )
+                    continue
+                logger.error("章节 %s LLM 生成失败: %s", plan.chapter_no, e)
+                content = f"（章节生成失败: {e}）"
+                break
 
         sources = _extract_sources(retrieval)
 
