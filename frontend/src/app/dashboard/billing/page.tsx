@@ -12,7 +12,10 @@ import {
   CheckCircle2,
   Clock,
   ShoppingCart,
+  Receipt,
 } from "lucide-react";
+import { toast } from "sonner";
+import Link from "next/link";
 import api from "@/lib/api";
 
 const PLAN_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
@@ -95,15 +98,15 @@ export default function BillingPage() {
         payment_method: "manual",
       });
       const data = res.data?.data;
-      alert(
-        `订单创建成功！\n\n订单号: ${data.order_no}\n金额: ¥${data.amount}\n\n` +
-        `请联系管理员完成付款确认。`
-      );
+      toast.success("订单创建成功", {
+        description: `订单号: ${data.order_no}  金额: ¥${data.amount}\n请联系管理员完成付款确认。`,
+        duration: 8000,
+      });
       // 刷新订阅状态
       const subRes = await api.get("/subscriptions/current");
       setSubscription(subRes.data?.data || null);
     } catch (err: any) {
-      alert(err.response?.data?.detail || "创建订单失败");
+      toast.error(err.response?.data?.detail || "创建订单失败");
     } finally {
       setOrdering(null);
     }
@@ -231,6 +234,21 @@ export default function BillingPage() {
                 </Button>
               </div>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 订单记录入口 */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-slate-600">
+              <Receipt className="h-5 w-5" />
+              <span>查看历史订单和支付记录</span>
+            </div>
+            <Link href="/dashboard/billing/payment">
+              <Button variant="outline">订单管理</Button>
+            </Link>
           </div>
         </CardContent>
       </Card>
