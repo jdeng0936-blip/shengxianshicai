@@ -1,6 +1,7 @@
-# 🏗️ 掘进工作面规程智能生成平台 — 全模块验证看板
+# 🏗️ 鲜标智投 — 全模块完成情况看板
 
-> **验证日期**: 2026-03-18 &nbsp;|&nbsp; **平台版本**: v0.1.0 &nbsp;|&nbsp; **环境**: Docker Compose (5 容器)
+> **更新日期**：2026-04-05 &nbsp;|&nbsp; **平台版本**：v0.4.x &nbsp;|&nbsp; **环境**：Docker Compose (5 容器)
+> **代码仓库**：jdeng0936-blip/shengxianshicai &nbsp;|&nbsp; **最后推送**：2026-04-04 17:06
 
 ---
 
@@ -8,133 +9,156 @@
 
 | 指标 | 数值 |
 |------|:----:|
-| **验证模块** | 9 / 9 ✅ |
-| **修复 Bug** | 4 个 |
-| **优化任务** | P0-P5 全部完成 |
-| **种子数据** | 8 文档 + 28 条款 + 12 规则 |
-| **pytest 通过率** | 19/19 (100%) |
-| **核心链路** | 全贯通 ✅ |
-| **代码改动文件** | 14 个 |
+| **완成 Week** | W1 → W5 全部完成 |
+| **API 路由文件** | 19 个 |
+| **后端服务文件** | 32 个（含 generation/ 7节点）|
+| **ORM 数据模型** | 18 张表 |
+| **测试文件** | 23 个 |
+| **七节点流水线** | Node1-7 全实现 ✅ |
 
 ---
 
-## 🔥 P5: 核心业务链路验证
+## ✅ 已完成功能全览
 
-**测试场景**: IV 类围岩 / 高瓦斯 / 拱形断面 5.2×3.8m / 煤巷 1200m
+### W1 — 基础架构
+- [x] RBAC 权限体系（角色 + 权限隔离）
+- [x] 统一日志系统
+- [x] 租户安全测试（多租户 tenant_id 隔离）
+- [x] Alembic 迁移目录统一
 
-```mermaid
-graph LR
-    A["项目参数<br/>Upsert ✅"] --> B["规则匹配<br/>5 条命中 ✅"]
-    B --> C["计算引擎<br/>支护+通风 ✅"]
-    C --> D["Word 生成<br/>5 章规程 ✅"]
-```
+### W2 — 商业闭环
+- [x] 风险报告（`risk_report_service.py`）
+- [x] Word/PDF 导出增强（`bid_doc_exporter.py`）
+- [x] 计费基础（`billing_service.py` + `billing.py` API）
 
-### 规则匹配结果 (5/12 命中)
+### W3 — AI 生成质量
+- [x] AI 生成质量强化
+- [x] 计费中心完善
+- [x] 企业完整度评分
+- [x] 报价预警
+- [x] 围串标语义相似度检测（3维度：embedding + N-gram + 段落哈希，25条测试）
+- [x] 文本差异化引擎（L1同义替换 + L2句式重组 + 保护机制，18条测试）
+- [x] 企业能力画像 v1 — 五维雷达（硬件/合规/服务/文档/竞争）+ 匹配度 API（13条测试）
 
-| 规则名称 | 分类 | 优先级 | 命中条件 |
-|----------|:----:|:------:|---------|
-| IV/V类围岩锚索加强支护 | 支护 | 10 | `rock_class ∈ [IV,V]` |
-| 高瓦斯/突出矿井双风机双电源 | 通风 | 10 | `gas_level ∈ [高瓦斯,突出]` |
-| 大断面加强支护（宽≥5m） | 支护 | 9 | `section_width ≥ 5.0` |
-| 长距离掘进加大风筒 | 通风 | 8 | `excavation_length ≥ 1000` |
-| 自燃煤层防灭火措施 | 安全 | 8 | `spontaneous_combustion ∈ [容易自燃,自燃]` |
+### W4 — E2E 稳定性
+- [x] E2E 全链路测试扩展至 16 步
+- [x] 安全回归（P0 安全红线修复）
+- [x] 种子案例数据
+- [x] 法律页面（免责声明/隐私/条款）
+- [x] 资质到期预警（四级分色 + 投标拦截）
+- [x] 投标检查清单（保证金/盖章/打印装订提醒）
+- [x] 导出后弹窗交付关卡
 
-### 计算引擎结果
+### W5 — 高级功能
+- [x] 商机漏斗（多平台抓取 → AI 匹配分析）
+- [x] 企业能力画像完整版
+- [x] 计费中心完整版
+- [x] 知识库重构
+- [x] 前端全面增强
 
-| 参数 | 值 |
-|------|---:|
-| 断面净面积 | 16.86 m² |
-| 锚杆锚固力 | 67.81 kN |
-| 每排锚杆数 | 6 根 |
-| 安全系数 | 1.8 |
-| 最终配风量 | 400.0 m³/min |
-| 推荐局扇 | FBD-6.3/2×22 (44 kW) |
+### Phase 1.2 — 七节点生成流水线
+- [x] **Node1**: `planner.py` — 大纲规划（14条测试）
+- [x] **Node2**: `retriever.py` — RAG 检索（多租户 pgvector）
+- [x] **Node3**: `writer.py` — 草稿生成（12条测试）
+- [x] **Node4**: `compliance_gate.py` — 合规门禁（L1格式+L2语义+L3废标，18条测试）
+- [x] **Node5**: `polish_pipeline.py` — 多轮润色（术语标准化+文风适配，15条测试）
+- [x] **Node6**: `reviewer.py` — Critic 审核（L1语义覆盖率+L2 LLM建议+L3覆盖率热图）
+- [x] **Node7**: `formatter.py` — 最终格式化
 
-### 生成文档结构
-
-| 章节 | 标题 | 来源 | 预警 |
-|:----:|------|:----:|:----:|
-| 第一章 | 工程概况 | 模板 | — |
-| 第二章 | 支护设计 | 计算引擎 | ⚠ |
-| 第三章 | 通风系统 | 计算引擎 | ⚠ |
-| 第四章 | 编制依据与规则命中 | 规则匹配 | — |
-| 第五章 | 安全技术措施 | 模板 | — |
+### 最新完成（截至 2026-04-04）
+- [x] 支付中心模块（`payment_service.py` + API + ORM + Alembic迁移 + 测试）
+- [x] LLM 四级降级路由 + 熔断器（Circuit Breaker）
+- [x] WebSocket 实时生成管线进度（Redis Pub/Sub + 七节点埋点）
+- [x] 解析任务状态迁移至 Redis（分布式锁防重入 + TTL）
+- [x] 反AI检测引擎（五维度 + L2 N-gram基线 + KL散度）
+- [x] 前端反AI检测面板 + 一键降AI润色
+- [x] 章节编辑器 edit_ratio 仪表盘（用户编辑占比展示）
+- [x] 195号文合规增强（跨章节一致性 + 资质引用验证）
+- [x] 移动端响应式适配
+- [x] db 脚本更新 + 评分提取测试
 
 ---
 
-## 🏛️ 平台架构
+## 🏛️ 当前架构
 
 ```mermaid
 graph LR
-    subgraph "Docker Compose"
+    subgraph "Docker Compose (端口 8888)"
         N["Nginx :80"] --> F["Next.js :3000"]
         N --> A["FastAPI :8000"]
-        A --> P["PostgreSQL :5432"]
-        A --> R["Redis :6379"]
-        A --> G["Gemini 2.5 Flash"]
+        A --> P["PostgreSQL :5432\n(+pgvector)"]
+        A --> R["Redis Stack :6379\n(Pub/Sub + 缓存)"]
+        A --> L["LLM 四级路由\n(Gemini/OpenAI/Deepseek/Qwen)"]
     end
     U["用户浏览器"] --> N
 ```
 
 ---
 
-## ✅ 9 模块验证
-
-````carousel
-![Dashboard 首页](file:///Users/imac2026/.gemini/antigravity/brain/89c26d8b-cbca-425d-bb7b-c6f19a0790a9/dashboard_home_1773809438497.png)
-<!-- slide -->
-![标准库](file:///Users/imac2026/.gemini/antigravity/brain/89c26d8b-cbca-425d-bb7b-c6f19a0790a9/standards_list_1773809451894.png)
-<!-- slide -->
-![规则管理](file:///Users/imac2026/.gemini/antigravity/brain/89c26d8b-cbca-425d-bb7b-c6f19a0790a9/rules_page_1773809458950.png)
-<!-- slide -->
-![项目管理](file:///Users/imac2026/.gemini/antigravity/brain/89c26d8b-cbca-425d-bb7b-c6f19a0790a9/verify_projects_init_1773811710430.png)
-<!-- slide -->
-![计算校验](file:///Users/imac2026/.gemini/antigravity/brain/89c26d8b-cbca-425d-bb7b-c6f19a0790a9/verify_calc_init_1773811553723.png)
-<!-- slide -->
-![AI 助手](file:///Users/imac2026/.gemini/antigravity/brain/89c26d8b-cbca-425d-bb7b-c6f19a0790a9/verify_ai_final_1773819111259.png)
-````
-
----
-
-## 📚 P3: 种子数据
-
-| 类别 | 内容 | 数量 |
-|------|------|:----:|
-| 标准库 | 法律法规/技术规范/安全规程/集团标准 | 8 文档 28 条款 |
-| 规则库 | 支护/通风/安全 | 3 组 12 规则 |
-
----
-
-## 🧪 P4: pytest 全绿
+## 🔄 七节点生成流水线状态
 
 ```
-======================== 19 passed, 6 warnings in 6.29s ========================
+招标文件上传
+  ↓
+Node1: planner.py        [✅ 实现 + 14条测试]
+  ↓
+Node2: retriever.py      [✅ 实现 + RAG多租户隔离]
+  ↓
+Node3: writer.py         [✅ 实现 + 12条测试]
+  ↓
+Node4: compliance_gate.py [✅ L1+L2+L3三级审查 + 18条测试]
+  ↓
+Node5: polish_pipeline.py [✅ 术语标准化+文风适配 + 15条测试]
+  ↓
+Node6: reviewer.py       [✅ L1语义+L2 LLM+L3热图]
+  ↓
+Node7: formatter.py      [✅ 最终格式化]
+  ↓
+导出（Word/PDF）+ WebSocket 实时进度推送
 ```
-
-| 测试文件 | 用例 | 结果 |
-|----------|:----:|:----:|
-| test_health | 1 | ✅ |
-| test_auth | 3 | ✅ |
-| test_standards | 4 | ✅ |
-| test_rules | 4 | ✅ |
-| test_projects | 4 | ✅ |
-| test_calc | 3 | ✅ |
 
 ---
 
-## 🔧 全部改动文件
+## 🧪 测试覆盖（23个测试文件）
 
-| 文件 | 改动说明 |
-|------|---------|
-| [project.py (model)](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/app/models/project.py) | mine relationship + cascade delete-orphan |
-| [project.py (schema)](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/app/schemas/project.py) | mine_name + from_orm_with_mine |
-| [project.py (api)](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/app/api/v1/project.py) | from_orm_with_mine |
-| [page.tsx](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/frontend/src/app/dashboard/projects/page.tsx) | 矿井下拉选择器 |
-| [seed_data.py](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/scripts/seed_data.py) | 种子数据脚本 |
-| [conftest.py](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/tests/conftest.py) | dependency_overrides |
-| [test_auth.py](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/tests/test_auth.py) | 认证测试 |
-| [test_standards.py](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/tests/test_standards.py) | 标准库 CRUD |
-| [test_rules.py](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/tests/test_rules.py) | 规则引擎 CRUD |
-| [test_projects.py](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/tests/test_projects.py) | 项目管理 CRUD |
-| [test_calc.py](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/tests/test_calc.py) | 计算引擎 |
-| [pytest.ini](file:///Users/imac2026/Desktop/掘进工作面规程智能生成平台/backend/pytest.ini) | asyncio_mode=auto |
+| 测试文件 | 覆盖范围 |
+|---------|---------|
+| test_e2e_full_flow.py | E2E 全链路 16步 |
+| test_doc_e2e.py | 文档生成 E2E |
+| test_generation_planner.py | Node1 大纲规划 |
+| test_generation_retriever.py | Node2 RAG 检索 |
+| test_generation_writer.py | Node3 草稿生成 |
+| test_generation_compliance_gate.py | Node4 合规门禁 |
+| test_generation_polish_pipeline.py | Node5 润色流水线 |
+| test_generation_reviewer.py | Node6 评审 |
+| test_generation_formatter.py | Node7 格式化 |
+| test_bid_compliance.py | 合规服务 |
+| test_bid_projects.py | 项目管理 |
+| test_bid_chapter_engine.py | 章节引擎 |
+| test_payment.py | 支付中心（最新）|
+| test_industry_vocab.py | 行业词汇 |
+| test_llm_selector.py | LLM 路由选择 |
+| test_auth.py | 认证 |
+| test_api.py | API 基础 |
+| test_health.py | 健康检查 |
+| test_validate.py | 数据校验 |
+| test_fetch.py | 数据抓取 |
+| test_logs.py | 日志 |
+
+---
+
+## ⏭️ 待继续的方向（基于 BidEngine 合并方案）
+
+根据 `docs/BidEngine_通用投标AI框架_合并实施方案.md`，当前项目已完成 **Phase 1**（7节点引擎），后续阶段：
+
+| 阶段 | 目标 | 状态 |
+|------|------|------|
+| **Phase 2** | 行业插件化抽象（`IndustryPlugin` 基类 + 2个插件） | ⬜ 待开发 |
+| **Phase 3** | 评分点驱动目录 + 变体生成引擎 + 前端工作台融合 | ⬜ 待开发 |
+| **Phase 4** | 新行业验证（IT服务/物业/医疗）+ 稳定化 | ⬜ 待开发 |
+
+**当前可立即继续的任务（按优先级）：**
+1. 🧪 先跑 pytest 确认 23 个测试文件全绿（上次拉取后未验证）
+2. 💳 支付中心前端页面对接（后端已就绪，前端缺页面）
+3. 🏭 Phase 2 行业插件化 — `IndustryPlugin` 基类设计
+4. 📊 评分点提取服务（`scoring_extract_service.py`）
