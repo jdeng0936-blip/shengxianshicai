@@ -5,9 +5,11 @@ Alembic env.py — 配置数据库迁移
 """
 import sys
 import os
+import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # 将 backend 目录加入 path
@@ -33,13 +35,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# 从 .env 加载 DATABASE_URL（asyncpg 驱动替换为同步 psycopg2）
+# 从 .env 加载 DATABASE_URL（保留 asyncpg 驱动，用异步引擎跑迁移）
 from dotenv import load_dotenv
 load_dotenv()
 _db_url = os.getenv("DATABASE_URL", "")
 if _db_url:
-    # Alembic 需要同步驱动，将 asyncpg 替换为 psycopg2
-    _db_url = _db_url.replace("+asyncpg", "")
     config.set_main_option("sqlalchemy.url", _db_url)
 
 target_metadata = Base.metadata
@@ -58,18 +58,27 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
+    """异步引擎跑迁移（使用 asyncpg，无需 psycopg2）"""
+    connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    with connectable.connect() as connection:
+
+    async def do_run():
+        async with connectable.connect() as connection:
+            await connection.run_sync(_run_migrations_sync)
+        await connectable.dispose()
+
+    def _run_migrations_sync(connection):
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
         )
         with context.begin_transaction():
             context.run_migrations()
+
+    asyncio.run(do_run())
 
 
 if context.is_offline_mode():
