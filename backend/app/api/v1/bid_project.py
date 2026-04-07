@@ -944,6 +944,38 @@ async def generate_risk_report(
         raise HTTPException(status_code=500, detail=f"风险报告生成失败: {str(e)}")
 
 
+# ========== 一键投标体检（W4-D1 聚合入口） ==========
+
+@router.post("/{project_id}/one-click-checkup", response_model=ApiResponse)
+async def one_click_checkup(
+    project_id: int,
+    tenant_id: int = Depends(get_tenant_id),
+    payload: dict = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """一键投标体检 — 聚合五维度检查结果
+
+    维度:
+      1. 资质有效期（CredentialAlertService）
+      2. 合规检查（BidComplianceService）
+      3. 风险报告（RiskReportService）
+      4. 评分覆盖（ScoringExtractor）
+      5. 数据一致性（compliance_gate）
+
+    一次请求,一份报告,直达用户调研 TOP 3/4/5 三大痛点。
+    """
+    from app.services.bid_checkup_service import BidCheckupService
+
+    svc = BidCheckupService(session)
+    try:
+        report = await svc.run_checkup(project_id, tenant_id)
+        return ApiResponse(data=report.to_dict())
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"体检执行失败: {str(e)}")
+
+
 # ========== 围串标相似度检测 ==========
 
 @router.post("/{project_id}/similarity-check", response_model=ApiResponse)
