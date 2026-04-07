@@ -15,6 +15,7 @@ AI 智能路由引擎 — LLM Tool Calling 驱动的意图识别与引擎调度
   - API Key 存后端 .env，严禁暴露给前端
 """
 import json
+import logging
 import os
 import time
 from typing import AsyncGenerator, Optional
@@ -23,6 +24,8 @@ from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.industry_vocab import IndustryVocabService
+
+logger = logging.getLogger("freshbid.ai_router")
 
 # ========== LangFuse 可观测性（可选） ==========
 _langfuse = None
@@ -178,6 +181,26 @@ class AIRouter:
         if cfg["base_url"]:
             client_kwargs["base_url"] = cfg["base_url"]
         return AsyncOpenAI(**client_kwargs), cfg["model"]
+
+    def _get_all_clients(self) -> list[tuple[AsyncOpenAI, str, str]]:
+        """获取所有可用 provider 的客户端列表（用于手动 fallback）
+
+        Returns:
+            [(client, model, provider), ...] 按 fallback 链顺序
+        """
+        from app.core.llm_selector import LLMSelector
+        from app.core.circuit_breaker import is_available
+
+        all_models = LLMSelector.get_all_models("tool_calling")
+        result = []
+        for cfg in all_models:
+            if not is_available(cfg["provider"]):
+                continue
+            client_kwargs = {"api_key": cfg["api_key"]}
+            if cfg["base_url"]:
+                client_kwargs["base_url"] = cfg["base_url"]
+            result.append((AsyncOpenAI(**client_kwargs), cfg["model"], cfg["provider"]))
+        return result
 
     def _build_system_prompt(self) -> str:
         """构建 System Prompt — 基础角色 + 行业词库动态注入"""
@@ -428,15 +451,33 @@ class AIRouter:
             )
 
         t0 = time.time()
-        client, model = self._get_client()
+        from app.core.circuit_breaker import record_success, record_failure
 
-        # 第一轮：LLM 决定是否调用工具
-        response = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto",
-        )
+        # 遍历 fallback 链：首个 provider 失败时自动切下一个
+        clients = self._get_all_clients()
+        if not clients:
+            clients = [self._get_client() + ("openai",)]
+
+        response = None
+        last_err = None
+        for client, model, provider in clients:
+            try:
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    tools=TOOLS,
+                    tool_choice="auto",
+                )
+                record_success(provider)
+                break
+            except Exception as e:
+                last_err = e
+                record_failure(provider, f"chat: {type(e).__name__}: {str(e)[:80]}")
+                logger.warning("AIRouter.chat 切换下一个 provider: %s/%s 失败: %s", provider, model, e)
+                continue
+
+        if response is None:
+            raise RuntimeError(f"AI 对话全部 provider 失败: {last_err}")
 
         msg = response.choices[0].message
 

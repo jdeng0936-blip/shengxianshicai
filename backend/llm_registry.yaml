@@ -20,46 +20,43 @@
 # 其余 provider 未配时自动 fallback 到 OPENAI_* 配置。
 #
 # ═══════════════════════════════════════════════════════
-# 四级复杂度路由策略
+# 模型稳定性现状（2026-04-07 实测）
 # ═══════════════════════════════════════════════════════
 #
-# T0 安全关键 — 零容错，废标/合规不能错
-#    Opus → GPT-5.4-pro → Gemini-3.1 → GPT-5-mini
+# ✅ gpt-5.4           稳定快速（主力）
+# ✅ gpt-5-mini        稳定（兜底）
+# ⚠️ gpt-5.4-pro       连接不稳定（降级为次选）
+# ⚠️ claude-sonnet-4-6  替代 Opus，速度快（已在 fallback 链中使用）
+# ✅ claude-sonnet-4-6 Opus 替代品（Anthropic 系，速度快）
+# ❌ gemini-flash-preview  TypeError NoneType（暂停使用，已从所有 fallback 链移除）
 #
-# T1 核心生成 — 质量优先，标书/路由/报价
-#    GPT-5.4-pro → Opus → Gemini-3.1 → GPT-5-mini
-#
-# T2 通用业务 — 均衡，对话/分析/匹配
-#    Gemini-3.1 → GPT-5.4-pro → Opus → GPT-5-mini
-#
-# T3 轻量提取 — 性价比，检索/模板
-#    Gemini-3.1 → GPT-5.4-pro → GPT-5-mini
+# 调整策略：gpt-5.4 作为全 task 首选，Sonnet/gpt-5.4-pro 兜底
 # ═══════════════════════════════════════════════════════
 
 tasks:
 
   # ═══════════════════════════════════════
-  # T0 安全关键 — Opus 主力
+  # T0 安全关键 — 质量优先
   # ═══════════════════════════════════════
 
   # 投标合规性检查 — 废标项/资质/一致性，错一个就废标
   compliance_check:
     models:
-      - "claude/claude-opus-4-6"
+      - "openai/gpt-5.4"
+      - "claude/claude-sonnet-4-6"
       - "openai/gpt-5.4-pro"
-      - "gemini/gemini-3.1-pro-preview"
       - "openai/gpt-5-mini"
     temperature: 0.1
     max_tokens: 2048
     tier: T0
-    note: "安全关键 — Opus 复杂推理+法规理解最强，合规检查零容错"
+    note: "安全关键 — gpt-5.4 稳定首选，Sonnet/pro 兜底保质量"
 
   # 招标文件解析 — 结构化提取，废标项不能遗漏
   tender_parse:
     models:
-      - "claude/claude-opus-4-6"
+      - "openai/gpt-5.4"
+      - "claude/claude-sonnet-4-6"
       - "openai/gpt-5.4-pro"
-      - "gemini/gemini-3.1-pro-preview"
       - "openai/gpt-5-mini"
     temperature: 0.1
     max_tokens: 4096
@@ -67,79 +64,74 @@ tasks:
     note: "安全关键 — 解析精度要求极高，废标项遗漏=直接出局"
 
   # ═══════════════════════════════════════
-  # T1 核心生成 — GPT 主力
+  # T1 核心生成 — 商务文档质量
   # ═══════════════════════════════════════
 
   # 投标章节生成 — 商务文档质量要求最高
   bid_section_generate:
     models:
+      - "openai/gpt-5.4"
+      - "claude/claude-sonnet-4-6"
       - "openai/gpt-5.4-pro"
-      - "claude/claude-opus-4-6"
-      - "gemini/gemini-3.1-pro-preview"
       - "openai/gpt-5-mini"
     temperature: 0.3
     max_tokens: 8192
     tier: T1
-    note: "核心生成 — GPT 商务中文文档能力强，Opus 兜底保质量"
+    note: "核心生成 — GPT-5.4 稳定首选，Sonnet 兜底"
 
   # AI 路由引擎 — Tool Calling 意图识别
   tool_calling:
     models:
+      - "openai/gpt-5.4"
       - "openai/gpt-5.4-pro"
-      - "claude/claude-opus-4-6"
-      - "gemini/gemini-3.1-pro-preview"
       - "openai/gpt-5-mini"
     temperature: 0.1
     max_tokens: 1024
     tier: T1
-    note: "核心路由 — GPT 工具调用准确率最高"
+    note: "核心路由 — 工具调用仅走 OpenAI 系（其他 provider 兼容性差）"
 
   # 报价提取 — 数字精度要求高
   quotation_extract:
     models:
+      - "openai/gpt-5.4"
+      - "claude/claude-sonnet-4-6"
       - "openai/gpt-5.4-pro"
-      - "claude/claude-opus-4-6"
-      - "gemini/gemini-3.1-pro-preview"
       - "openai/gpt-5-mini"
     temperature: 0.1
     max_tokens: 2048
     tier: T1
-    note: "核心提取 — 报价数字不能错，GPT 结构化输出稳定"
 
   # 报价分析 — 价格策略计算
   pricing_analysis:
     models:
+      - "openai/gpt-5.4"
+      - "claude/claude-sonnet-4-6"
       - "openai/gpt-5.4-pro"
-      - "claude/claude-opus-4-6"
-      - "gemini/gemini-3.1-pro-preview"
       - "openai/gpt-5-mini"
     temperature: 0.2
     max_tokens: 1024
     tier: T1
-    note: "核心分析 — 报价下浮率计算需数学推理准确"
 
   # ═══════════════════════════════════════
-  # T2 通用业务 — Gemini 主力
+  # T2 通用业务 — 均衡
   # ═══════════════════════════════════════
 
   # AI 对话 — 投标智能助手通用会话
   chat:
     models:
-      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4"
       - "openai/gpt-5.4-pro"
-      - "claude/claude-opus-4-6"
       - "openai/gpt-5-mini"
     temperature: 0.5
     max_tokens: 2048
     tier: T2
-    note: "通用对话 — Gemini 性价比高，响应快"
+    note: "通用对话 — gpt-5.4 响应快且稳定"
 
   # 工具结果解读
   tool_result_interpret:
     models:
-      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4"
       - "openai/gpt-5.4-pro"
-      - "claude/claude-opus-4-6"
       - "openai/gpt-5-mini"
     temperature: 0.3
     max_tokens: 2048
@@ -148,52 +140,45 @@ tasks:
   # 招标匹配分析 — 企业能力 vs 招标需求
   tender_match_analysis:
     models:
-      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4"
       - "openai/gpt-5.4-pro"
-      - "claude/claude-opus-4-6"
       - "openai/gpt-5-mini"
     temperature: 0.2
     max_tokens: 2048
     tier: T2
-    note: "通用分析 — 匹配度计算 Gemini 结构化输出够用"
 
   # 招标公告文本提取
   tender_text_parse:
     models:
-      - "gemini/gemini-3.1-pro-preview"
+      - "openai/gpt-5.4"
       - "openai/gpt-5.4-pro"
-      - "claude/claude-opus-4-6"
       - "openai/gpt-5-mini"
     temperature: 0.1
     max_tokens: 2048
     tier: T2
-    note: "通用提取 — 公告结构化，Gemini 足够"
 
   # ═══════════════════════════════════════
-  # T3 轻量提取 — Gemini 主力，不挂 Opus
+  # T3 轻量提取 — 性价比
   # ═══════════════════════════════════════
 
   # 法规检索增强
   regulation_retrieval:
     models:
-      - "gemini/gemini-3.1-pro-preview"
-      - "openai/gpt-5.4-pro"
+      - "openai/gpt-5.4"
       - "openai/gpt-5-mini"
     temperature: 0.1
     max_tokens: 1024
     tier: T3
-    note: "轻量检索 — 不需要强推理，省 Opus 额度"
+    note: "轻量检索 — 不需要强推理"
 
   # 模板匹配
   template_matching:
     models:
-      - "gemini/gemini-3.1-pro-preview"
-      - "openai/gpt-5.4-pro"
+      - "openai/gpt-5.4"
       - "openai/gpt-5-mini"
     temperature: 0.1
     max_tokens: 2048
     tier: T3
-    note: "轻量匹配 — 模板选择逻辑简单"
 
   # ═══════════════════════════════════════
   # Embedding — 独立通道
@@ -205,30 +190,3 @@ tasks:
       - "qwen/text-embedding-v3"
     tier: embedding
     note: "向量化独立通道，不走 LLM 熔断逻辑"
-
-
-# ═══════════════════════════════════════════════════════
-# 特征开关 — 功能灰度发布
-# ═══════════════════════════════════════════════════════
-#
-# 控制实验性功能的启用/禁用，支持灰度发布和回滚。
-# 业务代码通过 feature_enabled("feature_name") 查询。
-# 修改此处即可全局切换功能，无需改代码。
-#
-features:
-  # 已上线（稳定）
-  ai_detection: true          # 反 AI 检测引擎（五维度）
-  text_diversifier: true      # 文本差异化引擎（L1+L2）
-  similarity_check: true      # 围串标语义相似度检测
-  capability_profile: true    # 企业能力画像（五维雷达）
-  credential_alert: true      # 资质到期预警（四级分色）
-  bid_checklist: true         # 投标准备检查清单
-  websocket_progress: true    # WebSocket 实时进度推送
-
-  # 灰度中（可随时关闭回滚）
-  reactive_compact: false     # RAG 响应式压缩（Phase 2b 开发中）
-  async_pipeline: false       # 生成流水线异步化（Phase 2a 开发中）
-
-  # 规划中（未实现）
-  bid_engine_v2: false        # BidEngine 通用框架合并
-  event_sourcing: false       # 项目状态事件溯源
